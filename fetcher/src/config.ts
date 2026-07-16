@@ -18,6 +18,7 @@ const envSchema = z.object({
   API_HASH: requiredString,
   TG_SESSION: requiredString,
   CLIPS_DIR: requiredString,
+  CHANNEL_NAME: requiredString,
 });
 
 const validateConfig = () => {
@@ -55,7 +56,10 @@ export const initConfig = () => {
     apiId: env.API_ID,
     apiHash: env.API_HASH,
     tgSession: env.TG_SESSION,
-    clipsDir: path.resolve(env.CLIPS_DIR),
+    clipsDir: path.resolve(env.CLIPS_DIR, 'videos'),
+    thumbsDir: path.resolve(env.CLIPS_DIR, 'thumbnails'),
+    dbDir: path.resolve(env.CLIPS_DIR, 'videos.db'),
+    channelname: env.CHANNEL_NAME,
   };
 };
 
