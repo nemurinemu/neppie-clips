@@ -1,18 +1,20 @@
 # neppie-clips
 
-The bot is built with [grammY](https://grammy.dev) and uses [Kysely](https://kysely.dev) + SQLite as database.
+Neppie clip fetcher + api + frontend :)
 
 ## Dev setup
 
-Create `.env.development` based on `.env.example`, then run:
+1. Create `.env.development` based on `.env.example`;
 
-```bash
-$ pnpm install
+2. Go to https://my.telegram.org and get your api_id and api_hash;
 
-$ pnpm migrate:dev
+3. Run `pnpm i` to install dependencies;
 
-$ pnpm dev
-```
+4. Run `pnpm create-session` and log into the telegram in the command prompt to get your session and paste it into .env;
+
+5. Create YouTube Data API v3 api key in Google Cloud Console and paste it into .env
+
+6. Run `pnpm dev` and enjoy
 
 ## Deployment
 
@@ -24,18 +26,4 @@ Create `.env.production` based on `.env.example`, then run:
 $ pnpm install
 
 $ pnpm prod:deploy
-```
-
-## Migrations
-
-If you want to add a new migration, run:
-
-```bash
-$ pnpm migrate:make your_migration_name
-```
-
-Then after you have declared up and down function, update your types at `src/database/schema.d.ts` and run:
-
-```bash
-$ pnpm migrate:dev
 ```
