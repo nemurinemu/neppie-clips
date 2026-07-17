@@ -15,7 +15,9 @@ export const applySchema = (db: Database.Database) => {
     CREATE TABLE IF NOT EXISTS sources (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       video_id INTEGER NOT NULL REFERENCES videos(id) ON DELETE CASCADE,
-      url TEXT NOT NULL
+      url TEXT NOT NULL,
+      youtube_title TEXT,
+      youtube_published_at TEXT
     );
 
     CREATE INDEX IF NOT EXISTS idx_sources_video_id ON sources(video_id);

@@ -19,6 +19,7 @@ const envSchema = z.object({
   TG_SESSION: requiredString,
   CLIPS_DIR: requiredString,
   CHANNEL_NAME: requiredString,
+  YOUTUBE_API_KEY: requiredString,
 });
 
 const validateConfig = () => {
@@ -60,6 +61,7 @@ export const initConfig = () => {
     thumbsDir: path.resolve(env.CLIPS_DIR, 'thumbnails'),
     dbDir: path.resolve(env.CLIPS_DIR, 'videos.db'),
     channelname: env.CHANNEL_NAME,
+    youtubeApiKey: env.YOUTUBE_API_KEY,
   };
 };
 

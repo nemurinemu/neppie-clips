@@ -8,6 +8,7 @@ import { applySchema } from './schema';
 import { processVideo } from './process-video';
 import { EditedMessage } from 'telegram/events/EditedMessage';
 import { parseCaption } from './parse-caption';
+import { extractYoutubeId, fetchYoutubeMetadata } from './youtube';
 
 const main = async () => {
   const config = initConfig();
@@ -23,6 +24,24 @@ const main = async () => {
     { connectionRetries: 5 },
   );
   await client.connect();
+
+  let shuttingDown = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n${signal} received, shutting down`);
+    try {
+      await client.disconnect();
+    } catch (err) {
+      console.error('Error disconnecting Telegram client:', err);
+    }
+    db.close();
+    process.exit(0);
+  };
+
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGUSR2'] as const) {
+    process.once(signal, () => void shutdown(signal));
+  }
 
   const channel = await client.getEntity(config.channelname);
   await backfill(client, channel, db);
@@ -103,6 +122,12 @@ const handleEdit = async (
 
   const { description, sources } = parseCaption(caption);
 
+  const ytIds = sources
+    .map(extractYoutubeId)
+    .filter((id): id is string => !!id);
+  const ytMeta =
+    ytIds.length > 0 ? await fetchYoutubeMetadata(ytIds) : new Map();
+
   const updateStmt = db.prepare(
     'UPDATE videos SET description = ? WHERE id = ?',
   );
@@ -110,14 +135,23 @@ const handleEdit = async (
     'DELETE FROM sources WHERE video_id = ?',
   );
   const insertSourceStmt = db.prepare(
-    'INSERT INTO sources (video_id, url) VALUES (?, ?)',
+    'INSERT INTO sources (video_id, url, youtube_title, youtube_published_at) VALUES (?, ?, ?, ?)',
   );
 
   const tx = db.transaction((ids: number[]) => {
     for (const id of ids) {
       updateStmt.run(description, id);
       deleteSourcesStmt.run(id);
-      for (const url of sources) insertSourceStmt.run(id, url);
+      for (const url of sources) {
+        const ytId = extractYoutubeId(url);
+        const meta = ytId ? ytMeta.get(ytId) : undefined;
+        insertSourceStmt.run(
+          id,
+          url,
+          meta?.title ?? null,
+          meta?.publishedAt ?? null,
+        );
+      }
     }
   });
   tx(affectedIds);
@@ -169,24 +203,6 @@ const listenLive = async (
     },
     new EditedMessage({ chats: [channel] }),
   );
-
-  let shuttingDown = false;
-  const shutdown = async (signal: NodeJS.Signals) => {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    console.log(`\n${signal} received, shutting down`);
-    try {
-      await client.disconnect();
-    } catch (err) {
-      console.error('Error disconnecting Telegram client:', err);
-    }
-    db.close();
-    process.exit(0);
-  };
-
-  for (const signal of ['SIGINT', 'SIGTERM', 'SIGUSR2'] as const) {
-    process.once(signal, () => void shutdown(signal));
-  }
 };
 
 main().catch((err) => {

@@ -5,6 +5,7 @@ import { promisify } from 'node:util';
 import { Api, TelegramClient } from 'telegram';
 import { config, initConfig } from './config';
 import { parseCaption } from './parse-caption';
+import { extractYoutubeId, fetchYoutubeMetadata } from './youtube';
 
 const execFileAsync = promisify(execFile);
 
@@ -20,8 +21,10 @@ export const processVideo = async (
   if (exists) return;
 
   const { description, sources } = parseCaption(caption);
-  const videoPath = path.resolve(config.clipsDir, `${msg.id}.mp4`);
-  const thumbPath = path.resolve(config.thumbsDir, `${msg.id}.jpg`);
+  const videoFilename = `${msg.id}.mp4`;
+  const thumbFilename = `${msg.id}.jpg`;
+  const videoPath = path.resolve(config.clipsDir, videoFilename);
+  const thumbPath = path.resolve(config.thumbsDir, thumbFilename);
 
   await client.downloadMedia(msg, { outputFile: videoPath });
   await execFileAsync('ffmpeg', [
@@ -46,15 +49,21 @@ export const processVideo = async (
     `,
   );
   const insertSource = db.prepare(
-    'INSERT INTO sources (video_id, url) VALUES (?, ?)',
+    'INSERT INTO sources (video_id, url, youtube_title, youtube_published_at) VALUES (?, ?, ?, ?)',
   );
+
+  const ytIds = sources
+    .map(extractYoutubeId)
+    .filter((id): id is string => !!id);
+  const ytMeta =
+    ytIds.length > 0 ? await fetchYoutubeMetadata(ytIds) : new Map();
 
   const tx = db.transaction(() => {
     insertVideo.run(
       msg.id,
       description,
-      videoPath,
-      thumbPath,
+      videoFilename,
+      thumbFilename,
       msg.date,
       msg.groupedId?.toString() ?? null,
     );
@@ -62,9 +71,17 @@ export const processVideo = async (
       .prepare('SELECT id FROM videos WHERE telegram_msg_id = ?')
       .get(msg.id) as { id: number };
     for (const url of sources) {
-      insertSource.run(videoRow.id, url);
+      const ytId = extractYoutubeId(url);
+      const meta = ytId ? ytMeta.get(ytId) : undefined;
+      insertSource.run(
+        videoRow.id,
+        url,
+        meta?.title ?? null,
+        meta?.publishedAt ?? null,
+      );
     }
   });
   tx();
+
   console.log(`Saved video ${msg.id}: ${description}`);
 };
