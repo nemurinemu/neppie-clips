@@ -20,37 +20,51 @@ export const processVideo = async (
   if (exists) return;
 
   const { description, sources } = parseCaption(caption);
-
   const videoPath = path.resolve(config.clipsDir, `${msg.id}.mp4`);
   const thumbPath = path.resolve(config.thumbsDir, `${msg.id}.jpg`);
 
   await client.downloadMedia(msg, { outputFile: videoPath });
   await execFileAsync('ffmpeg', [
+    '-y',
     '-ss',
     '00:00:01',
     '-i',
     videoPath,
     '-frames:v',
     '1',
+    '-update',
+    '1',
     thumbPath,
   ]);
 
-  db.prepare(
+  const insertVideo = db.prepare(
     `
     INSERT INTO videos (telegram_msg_id, description, video_path, thumb_path, posted_at, grouped_id)
     VALUES (?, ?, ?, ?, ?, ?)
     ON CONFLICT(telegram_msg_id) DO UPDATE SET
-      description = excluded.description,
-      missing_source_note = excluded.missing_source_note 
+      description = excluded.description
     `,
-  ).run(
-    msg.id,
-    description,
-    videoPath,
-    thumbPath,
-    msg.date,
-    msg.groupedId?.toString() ?? null,
+  );
+  const insertSource = db.prepare(
+    'INSERT INTO sources (video_id, url) VALUES (?, ?)',
   );
 
+  const tx = db.transaction(() => {
+    insertVideo.run(
+      msg.id,
+      description,
+      videoPath,
+      thumbPath,
+      msg.date,
+      msg.groupedId?.toString() ?? null,
+    );
+    const videoRow = db
+      .prepare('SELECT id FROM videos WHERE telegram_msg_id = ?')
+      .get(msg.id) as { id: number };
+    for (const url of sources) {
+      insertSource.run(videoRow.id, url);
+    }
+  });
+  tx();
   console.log(`Saved video ${msg.id}: ${description}`);
 };

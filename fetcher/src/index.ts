@@ -169,6 +169,24 @@ const listenLive = async (
     },
     new EditedMessage({ chats: [channel] }),
   );
+
+  let shuttingDown = false;
+  const shutdown = async (signal: NodeJS.Signals) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`\n${signal} received, shutting down`);
+    try {
+      await client.disconnect();
+    } catch (err) {
+      console.error('Error disconnecting Telegram client:', err);
+    }
+    db.close();
+    process.exit(0);
+  };
+
+  for (const signal of ['SIGINT', 'SIGTERM', 'SIGUSR2'] as const) {
+    process.once(signal, () => void shutdown(signal));
+  }
 };
 
 main().catch((err) => {
