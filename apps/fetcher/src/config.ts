@@ -31,37 +31,42 @@ const validateConfig = () => {
     );
     throw new Error('Invalid environment configuration');
   }
-  validateClipsDir(parsed.data.CLIPS_DIR);
   return parsed.data;
 };
 
-const validateClipsDir = (dir: string) => {
+const validateWritableDir = (dir: string) => {
   try {
-    fs.accessSync(dir, constants.F_OK | constants.W_OK);
+    fs.accessSync(dir, constants.W_OK);
   } catch (e) {
     if (e instanceof Error && 'code' in e && e.code === 'ENOENT') {
       try {
         fs.mkdirSync(dir, { recursive: true });
       } catch {
-        throw new Error(`Failed creating clips directory at ${dir}`);
+        throw new Error(`Failed creating directory at ${dir}`);
       }
     } else {
-      throw new Error(`No write access to clips directory at ${dir}`);
+      throw new Error(`No write access to directory at ${dir}`);
     }
   }
 };
 
 export const initConfig = () => {
   const env = validateConfig();
+  const paths = {
+    clipsDir: path.resolve(env.CLIPS_DIR, 'videos'),
+    thumbsDir: path.resolve(env.CLIPS_DIR, 'thumbnails'),
+    dbPath: path.resolve(env.CLIPS_DIR, 'videos.db'),
+  };
+  validateWritableDir(paths.clipsDir);
+  validateWritableDir(paths.thumbsDir);
   return {
+    nodeEnv,
     apiId: env.API_ID,
     apiHash: env.API_HASH,
     tgSession: env.TG_SESSION,
-    clipsDir: path.resolve(env.CLIPS_DIR, 'videos'),
-    thumbsDir: path.resolve(env.CLIPS_DIR, 'thumbnails'),
-    dbDir: path.resolve(env.CLIPS_DIR, 'videos.db'),
-    channelname: env.CHANNEL_NAME,
+    channelName: env.CHANNEL_NAME,
     youtubeApiKey: env.YOUTUBE_API_KEY,
+    ...paths,
   };
 };
 

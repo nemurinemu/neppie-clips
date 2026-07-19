@@ -2,7 +2,7 @@
   "name": "@neppie-clips/fetcher",
   "version": "1.0.0",
   "description": "",
-  "main": "dist/index.js",
+  "main": "./dist/index.js",
   "scripts": {
     "create-session": "tsx src/scripts/create-session.ts",
     "dev": "nodemon --exec tsx src/index.ts",

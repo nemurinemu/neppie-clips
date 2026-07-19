@@ -6,9 +6,7 @@ export const applySchema = (db: Database.Database) => {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       telegram_msg_id INTEGER UNIQUE NOT NULL,
       description TEXT,
-      video_path TEXT NOT NULL,
-      thumb_path TEXT,
-      posted_at INTEGER,
+      added_at INTEGER,
       grouped_id TEXT
     );
 

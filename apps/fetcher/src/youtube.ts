@@ -7,7 +7,7 @@ export const extractYoutubeId = (url: string): string | null => {
     if (u.hostname === 'youtu.be') {
       return u.pathname.slice(1) || null;
     }
-    if (u.hostname === 'youtube.com') {
+    if (u.hostname === 'www.youtube.com') {
       return u.searchParams.get('v');
     }
     return null;

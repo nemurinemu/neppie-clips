@@ -1,5 +1,5 @@
 import Database from 'better-sqlite3';
-import { initConfig } from './config';
+import { config } from './config';
 import { Api, TelegramClient } from 'teleproto';
 import { StringSession } from 'teleproto/sessions';
 import { Entity } from 'teleproto/define';
@@ -10,8 +10,7 @@ import { parseCaption } from './parse-caption';
 import { extractYoutubeId, fetchYoutubeMetadata } from './youtube';
 
 const main = async () => {
-  const config = initConfig();
-  const db = new Database(config.dbDir);
+  const db = new Database(config.dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   applySchema(db);
@@ -42,7 +41,7 @@ const main = async () => {
     process.once(signal, () => void shutdown(signal));
   }
 
-  const channel = await client.getEntity(config.channelname);
+  const channel = await client.getEntity(config.channelName);
   await backfill(client, channel, db);
   listenLive(client, channel, db);
 
@@ -188,9 +187,12 @@ const listenLive = async (
       clearTimeout(entry.timer);
       entry.timer = setTimeout(async () => {
         const caption = entry.messages.find((m) => m.message)?.message ?? '';
-        if (!caption) return;
+        if (!caption) {
+          pending.delete(key);
+          return;
+        }
         for (const m of entry.messages)
-          await processVideo(client, msg, caption, db);
+          await processVideo(client, m, caption, db);
         pending.delete(key);
       }, 1500);
     },
