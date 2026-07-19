@@ -1,0 +1,22 @@
+{
+  "name": "neppie-clips",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "pnpm --filter @neppie-clips/fetcher dev",
+    "build:shared": "pnpm --filter @neppie-clips/shared build"
+  },
+  "license": "ISC",
+  "packageManager": "pnpm@10.26.2",
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.7.0",
+    "globals": "^17.7.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.64.0"
+  },
+  "dependencies": {
+    "@types/node": "^26.1.1"
+  }
+}

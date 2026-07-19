@@ -1,12 +1,11 @@
 import Database from 'better-sqlite3';
 import { initConfig } from './config';
-import { Api, TelegramClient } from 'telegram';
-import { StringSession } from 'telegram/sessions';
-import { Entity } from 'telegram/define';
-import { NewMessage } from 'telegram/events';
+import { Api, TelegramClient } from 'teleproto';
+import { StringSession } from 'teleproto/sessions';
+import { Entity } from 'teleproto/define';
+import { NewMessage, EditedMessage } from 'teleproto/events';
 import { applySchema } from './schema';
 import { processVideo } from './process-video';
-import { EditedMessage } from 'telegram/events/EditedMessage';
 import { parseCaption } from './parse-caption';
 import { extractYoutubeId, fetchYoutubeMetadata } from './youtube';
 

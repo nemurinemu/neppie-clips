@@ -1,7 +1,7 @@
-import { TelegramClient } from 'telegram';
+import { TelegramClient } from 'teleproto';
 import { initConfig } from '../config';
 import { input, password } from '@inquirer/prompts';
-import { StringSession } from 'telegram/sessions';
+import { StringSession } from 'teleproto/sessions';
 
 const main = async () => {
   const config = initConfig();

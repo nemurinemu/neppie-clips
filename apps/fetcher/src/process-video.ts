@@ -2,10 +2,11 @@ import Database from 'better-sqlite3';
 import { execFile } from 'node:child_process';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { Api, TelegramClient } from 'telegram';
+import { Api, TelegramClient } from 'teleproto';
 import { config, initConfig } from './config';
 import { parseCaption } from './parse-caption';
 import { extractYoutubeId, fetchYoutubeMetadata } from './youtube';
+import { Video } from '@neppie-clips/shared';
 
 const execFileAsync = promisify(execFile);
 
@@ -69,7 +70,7 @@ export const processVideo = async (
     );
     const videoRow = db
       .prepare('SELECT id FROM videos WHERE telegram_msg_id = ?')
-      .get(msg.id) as { id: number };
+      .get(msg.id) as Pick<Video, 'id'>;
     for (const url of sources) {
       const ytId = extractYoutubeId(url);
       const meta = ytId ? ytMeta.get(ytId) : undefined;
