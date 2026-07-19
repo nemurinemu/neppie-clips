@@ -42,6 +42,17 @@ const validateReadable = (target: string, label: string) => {
   }
 };
 
+const validateWritableDir = (dir: string, label: string) => {
+  try {
+    fs.accessSync(dir, constants.W_OK);
+  } catch (e) {
+    if (e instanceof Error && 'code' in e && e.code === 'ENOENT') {
+      throw new Error(`No ${label} found at ${dir}`);
+    }
+    throw new Error(`No write access to ${label} at ${dir}`);
+  }
+};
+
 export const initConfig = () => {
   const env = validateConfig();
   const paths = {
@@ -52,6 +63,7 @@ export const initConfig = () => {
   validateReadable(paths.dbPath, 'database');
   validateReadable(paths.clipsDir, 'clips directory');
   validateReadable(paths.thumbsDir, 'thumbnails directory');
+  validateWritableDir(path.dirname(paths.dbPath), 'database directory');
 
   return {
     nodeEnv,
