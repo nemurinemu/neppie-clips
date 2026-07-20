@@ -12,6 +12,6 @@ export const parseCaption = (caption: string): Caption => {
   const sourceLines = lines.filter((l) => l.startsWith('https'));
   const descriptionLines = lines.filter((l) => !l.startsWith('https'));
 
-  const description = descriptionLines.join(' ').trim();
+  const description = descriptionLines.join('\n').trim();
   return { description, sources: sourceLines };
 };

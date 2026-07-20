@@ -58,27 +58,18 @@ const backfill = async (
     messages.push(msg);
   }
 
-  const groups = new Map<string, Api.Message[]>();
-  const singles: Api.Message[] = [];
+  const groupCaptions = new Map<string, string>();
+  for (const msg of messages) {
+    if (!msg.groupedId || !msg.message) continue;
+    const key = msg.groupedId.toString();
+    if (!groupCaptions.has(key)) groupCaptions.set(key, msg.message);
+  }
 
   for (const msg of messages) {
     if (!msg.video) continue;
-    if (msg.groupedId) {
-      const key = msg.groupedId.toString();
-      if (!groups.has(key)) groups.set(key, []);
-      groups.get(key)!.push(msg);
-    } else {
-      singles.push(msg);
-    }
-  }
-
-  for (const group of groups.values()) {
-    const caption = group.find((m) => m.message)?.message ?? '';
-    if (!caption) continue;
-    for (const msg of group) await processVideo(client, msg, caption, db);
-  }
-  for (const msg of singles) {
-    const caption = msg.message;
+    const caption = msg.groupedId
+      ? groupCaptions.get(msg.groupedId.toString())
+      : msg.message;
     if (!caption) continue;
     await processVideo(client, msg, caption, db);
   }
