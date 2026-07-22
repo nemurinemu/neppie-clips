@@ -12,7 +12,7 @@ export const site = {
 
   aboutHtml: `I love neppie!!! And I make a lot of clips with neppie. But how do you even find the clips?! You find them here.
   <br><br>
-  This website features all clips that I've made, including those posted to neppie's discord server, my twitter, my youtube channel and neppie clips youtube channel. 
+  This website features all clips that I've made, including those posted to neppie's discord server, my twitter, my youtube channel and neppie clips youtube channel. Sources and downloads provided.
   New clips will appear here as soon as I post them anywhere else.
   <br>
   Except for twitch clips!! You can find those on Katabasis clips website below!<br><br> 
