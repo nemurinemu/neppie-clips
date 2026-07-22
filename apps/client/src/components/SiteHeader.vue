@@ -121,12 +121,19 @@ const columns = [
     border-color 0.15s ease,
     transform 0.1s ease;
 }
-.link:hover {
+@media (hover: hover) {
+  .link:hover {
+    background: var(--col-fill);
+    border-color: var(--col-fill);
+    color: #fff;
+  }
+}
+/* Fill on real press too, so a tap gives feedback on touch (and clears on
+   release — no phantom hover left behind after a scroll). */
+.link:active {
   background: var(--col-fill);
   border-color: var(--col-fill);
   color: #fff;
-}
-.link:active {
   transform: translateY(1px);
 }
 
