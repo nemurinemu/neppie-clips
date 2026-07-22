@@ -5,7 +5,7 @@ const model = defineModel<string>({ required: true });
 const input = ref<HTMLInputElement | null>(null);
 
 const focus = () => {
-  input.value?.focus();
+  input.value?.focus({ preventScroll: true });
   input.value?.select();
 };
 

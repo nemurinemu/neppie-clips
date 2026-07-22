@@ -102,7 +102,10 @@ watch(
               </span>
             </td>
             <td class="col-desc">{{ clip.description || 'Untitled clip' }}</td>
-            <td class="col-date col-addedAt">{{ formatDate(clip.addedAt) }}</td>
+            <td class="col-date col-addedAt">
+              <span class="row-id-mobile">#{{ clip.id }} · </span
+              >{{ formatDate(clip.addedAt) }}
+            </td>
             <td class="col-date col-streamAt">{{ formatDate(clip.streamAt) }}</td>
             <td class="col-sources">
               <SourceLinks :sources="clip.sources" />
@@ -276,6 +279,10 @@ th.active {
   white-space: pre-line;
 }
 
+.row-id-mobile {
+  display: none;
+}
+
 .col-date {
   white-space: nowrap;
   text-align: center;
@@ -351,10 +358,10 @@ th.active {
     grid-template-areas:
       'thumb desc  dl'
       'thumb added dl';
-    column-gap: 0.75rem;
+    column-gap: 1rem;
     row-gap: 0.25rem;
     align-items: center;
-    padding: 0.75rem;
+    padding: 1rem;
     border-bottom: 1px solid var(--line);
   }
 
@@ -398,6 +405,10 @@ th.active {
     grid-area: added;
     text-align: left;
     font-size: 0.8rem;
+  }
+
+  .row-id-mobile {
+    display: inline;
   }
 
   .clip-row .col-dl {

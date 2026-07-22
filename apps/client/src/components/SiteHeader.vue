@@ -72,7 +72,7 @@ const columns = [
 .about {
   margin: 0.9rem 0 0;
   max-width: none;
-  color: var(--ink-soft);
+  color: #3a352d;
   line-height: 1.55;
 }
 

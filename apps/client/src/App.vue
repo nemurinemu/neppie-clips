@@ -47,21 +47,28 @@ const onSortChange = (e: Event) => {
 };
 
 const onKeydown = (e: KeyboardEvent) => {
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+  // Match the physical key (layout-independent) so a non-Latin keyboard layout
+  // doesn't make e.key something other than 'f' and slip through to the browser.
+  const isF = e.code === 'KeyF' || e.key.toLowerCase() === 'f';
+  if ((e.ctrlKey || e.metaKey) && isF) {
     e.preventDefault();
-    smoothScrollTo(0, 320);
+    const toolbar = document.querySelector<HTMLElement>('.toolbar');
+    if (toolbar) {
+      const top = toolbar.getBoundingClientRect().top + window.scrollY - 16;
+      smoothScrollTo(Math.max(0, top), 320);
+    }
     searchBar.value?.focus();
   }
 };
 
 onMounted(async () => {
+  window.addEventListener('popstate', onPopState);
+  window.addEventListener('keydown', onKeydown);
   await load();
   const target = readUrl();
   if (target !== null && visible.value.some((c) => c.id === target)) {
     expandedId.value = target;
   }
-  window.addEventListener('popstate', onPopState);
-  window.addEventListener('keydown', onKeydown);
 });
 
 onUnmounted(() => {
