@@ -1,35 +1,25 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { randomPeek, playRandomPeekSound } from '../lib/peek';
-import { isOpaqueAtEvent } from '../lib/hittest';
+import { randomPeek } from '../lib/peek';
+import { usePeekPress } from '../lib/peekPress';
 
 const image = randomPeek();
-const hot = ref(false);
-
-const sample = (e: PointerEvent) => {
-  hot.value = isOpaqueAtEvent(e);
-};
-const onLeave = () => {
-  hot.value = false;
-};
-const onPeek = (e: MouseEvent) => {
-  if (isOpaqueAtEvent(e)) playRandomPeekSound();
-};
+const { hot, pressed, onMove, onDown, onLeave, release } = usePeekPress();
 </script>
 
 <template>
   <img
     v-if="image"
     class="peek"
-    :class="{ hot }"
+    :class="{ hot, pressed }"
     :src="image"
     alt=""
     aria-hidden="true"
     draggable="false"
-    @pointermove="sample"
-    @pointerdown="sample"
+    @pointermove="onMove"
+    @pointerdown="onDown"
+    @pointerup="release"
+    @pointercancel="release"
     @pointerleave="onLeave"
-    @click="onPeek"
   />
 </template>
 
@@ -52,13 +42,13 @@ const onPeek = (e: MouseEvent) => {
     -webkit-user-select: none;
     transform: rotate(-5deg);
     transform-origin: bottom right;
-    transition: transform 0.12s ease;
+    transition: transform 0.08s ease;
     z-index: 0;
   }
   .peek.hot {
     cursor: pointer;
   }
-  .peek.hot:active {
+  .peek.pressed {
     transform: rotate(-5deg) scale(0.97);
   }
 }

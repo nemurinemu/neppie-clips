@@ -21,6 +21,11 @@ const envSchema = z.object({
   PORT: numeric,
   CLIPS_DIR: requiredString,
   CORS_ORIGIN: optionalString,
+  // Optional: enables per-clip link-preview tags. Path to the built
+  // index.html (in the nginx web root). BASE_URL overrides the request-derived
+  // origin used for absolute og:image/og:url (usually leave it unset).
+  WEB_INDEX: optionalString,
+  BASE_URL: optionalString,
 });
 
 const validateConfig = () => {
@@ -73,6 +78,8 @@ export const initConfig = () => {
     nodeEnv,
     port: env.PORT,
     corsOrigin: env.CORS_ORIGIN ?? '',
+    webIndex: env.WEB_INDEX,
+    baseUrl: env.BASE_URL,
     ...paths,
   };
 };
