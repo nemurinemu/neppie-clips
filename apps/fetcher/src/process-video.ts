@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { execFile } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import { Api, TelegramClient } from 'teleproto';
@@ -20,11 +21,10 @@ export const processVideo = async (
     .prepare('SELECT id FROM videos WHERE telegram_msg_id = ?')
     .get(msg.id) as { id: number } | undefined;
 
+  const videoPath = path.resolve(config.clipsDir, `${msg.id}.mp4`);
+
   if (!exists) {
-    const videoFilename = `${msg.id}.mp4`;
-    const thumbFilename = `${msg.id}.jpg`;
-    const videoPath = path.resolve(config.clipsDir, videoFilename);
-    const thumbPath = path.resolve(config.thumbsDir, thumbFilename);
+    const thumbPath = path.resolve(config.thumbsDir, `${msg.id}.webp`);
 
     await client.downloadMedia(msg, { outputFile: videoPath });
     await execFileAsync('ffmpeg', [
@@ -37,17 +37,25 @@ export const processVideo = async (
       '1',
       '-update',
       '1',
+      '-vf',
+      'scale=640:-2',
+      '-quality',
+      '80',
       thumbPath,
     ]);
   }
   const { description, sources } = parseCaption(caption);
+  const sizeBytes = fs.existsSync(videoPath)
+    ? fs.statSync(videoPath).size
+    : null;
 
   const insertVideo = db.prepare(
     `
-    INSERT INTO videos (telegram_msg_id, description, added_at, grouped_id)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO videos (telegram_msg_id, description, added_at, grouped_id, size_bytes)
+    VALUES (?, ?, ?, ?, ?)
     ON CONFLICT(telegram_msg_id) DO UPDATE SET
-      description = excluded.description
+      description = excluded.description,
+      size_bytes = excluded.size_bytes
     `,
   );
 
@@ -69,6 +77,7 @@ export const processVideo = async (
       description,
       msg.date,
       msg.groupedId?.toString() ?? null,
+      sizeBytes,
     );
     const videoId =
       exists?.id ??

@@ -10,13 +10,17 @@ dotenv.config({
 
 const emptyToUndefined = (v: unknown) =>
   typeof v === 'string' && v.trim() === '' ? undefined : v;
-const requiredString = z.string().trim().nonempty();
 const numeric = z.preprocess(emptyToUndefined, z.coerce.number());
+const requiredString = z.string().trim().nonempty();
+const optionalString = z.preprocess(
+  emptyToUndefined,
+  z.string().trim().optional(),
+);
 
 const envSchema = z.object({
   PORT: numeric,
   CLIPS_DIR: requiredString,
-  CORS_ORIGIN: requiredString,
+  CORS_ORIGIN: optionalString,
 });
 
 const validateConfig = () => {
@@ -68,7 +72,7 @@ export const initConfig = () => {
   return {
     nodeEnv,
     port: env.PORT,
-    corsOrigin: env.CORS_ORIGIN,
+    corsOrigin: env.CORS_ORIGIN ?? '',
     ...paths,
   };
 };

@@ -138,8 +138,14 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
+# deploy secrets
+scripts/deploy.env
+
 # database
 /db/
 
 # clips
 /clips/
+
+apps/client/public/*
+!apps/client/public/README.md

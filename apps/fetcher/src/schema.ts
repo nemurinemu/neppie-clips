@@ -7,7 +7,8 @@ export const applySchema = (db: Database.Database) => {
       telegram_msg_id INTEGER UNIQUE NOT NULL,
       description TEXT,
       added_at INTEGER,
-      grouped_id TEXT
+      grouped_id TEXT,
+      size_bytes INTEGER
     );
 
     CREATE TABLE IF NOT EXISTS sources (

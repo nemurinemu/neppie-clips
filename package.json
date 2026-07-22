@@ -4,8 +4,13 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "dev": "pnpm --filter @neppie-clips/fetcher dev",
-    "build:shared": "pnpm --filter @neppie-clips/shared build"
+    "dev": "pnpm --filter='!@neppie-clips/fetcher' -r --parallel dev",
+    "dev:fetcher": "pnpm --filter @neppie-clips/fetcher dev",
+    "build:shared": "pnpm --filter @neppie-clips/shared build",
+    "deploy:client": "bash scripts/deploy.sh client",
+    "deploy:api": "bash scripts/deploy.sh api",
+    "deploy:fetcher": "bash scripts/deploy.sh fetcher",
+    "deploy:all": "bash scripts/deploy.sh all"
   },
   "license": "ISC",
   "packageManager": "pnpm@10.26.2",

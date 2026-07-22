@@ -12,13 +12,17 @@ app.use(compression());
 
 if (config.nodeEnv !== 'production') {
   app.use(cors({ origin: config.corsOrigin }));
+  app.use('/media/videos', express.static(config.clipsDir));
+  app.use('/media/thumbnails', express.static(config.thumbsDir));
 }
 
 const videosStmt = db.prepare(`
   SELECT
     id,
+    telegram_msg_id as telegramMsgId,
     description,
-    added_at as addedAt
+    added_at as addedAt,
+    size_bytes as sizeBytes
   FROM videos
   ORDER BY added_at DESC  
   `);

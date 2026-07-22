@@ -16,6 +16,21 @@ Neppie clip fetcher + api + frontend :)
 
 6. Run `pnpm dev` and enjoy
 
+## Frontend
+
+The client app lives in `apps/client` (Vue 3 + Vite).
+
+```bash
+$ pnpm build:shared          # emit shared types first
+$ pnpm --filter @neppie-clips/api dev       # serves /api and /media in dev
+$ pnpm --filter @neppie-clips/client dev
+```
+
+Copy `.env.example` to `.env.development` and set `VITE_DEV_PROXY_TARGET` to the
+API origin (e.g. `http://localhost:3200`) to develop against real data. Site
+content (banner, about text, links, peeker PNGs) is edited in
+`apps/client/src/site.ts`; drop image assets into `apps/client/public/`.
+
 ## Deployment
 
 [PM2](https://pm2.keymetrics.io/) is used for handling the bot process on my deploy server. If you don't intend using it, edit the deploy script.

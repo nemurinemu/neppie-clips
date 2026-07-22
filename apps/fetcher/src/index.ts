@@ -187,13 +187,13 @@ const listenLive = async (
         pending.delete(key);
       }, 1500);
     },
-    new NewMessage({ chats: [channel] }),
+    new NewMessage({ chats: [channel.id] }),
   );
   client.addEventHandler(
     async (event) => {
       await handleEdit(client, event.message, db);
     },
-    new EditedMessage({ chats: [channel] }),
+    new EditedMessage({ chats: [channel.id] }),
   );
 };
 

@@ -6,6 +6,7 @@ export interface Video {
   description: string;
   addedAt: string;
   groupedId: string | null;
+  sizeBytes: number | null;
 }
 
 export interface Source {
@@ -18,7 +19,9 @@ export interface Source {
 
 export interface VideoResponse {
   id: number;
+  telegramMsgId: number;
   description: string;
   addedAt: string;
+  sizeBytes: number | null;
   sources: Pick<Source, 'url' | 'youtubeTitle' | 'youtubePublishedAt'>[];
 }
