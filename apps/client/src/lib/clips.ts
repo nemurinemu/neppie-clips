@@ -49,7 +49,7 @@ const toClip = (v: VideoResponse): Clip => {
     thumbUrl: config.thumbUrl(v.telegramMsgId),
     videoUrl: config.videoUrl(v.telegramMsgId),
     sources,
-    search: [v.description, ...sources.map((s) => `${s.title} ${s.url}`)]
+    search: [v.description, ...sources.map((s) => s.title)]
       .join(' ')
       .toLowerCase(),
   };

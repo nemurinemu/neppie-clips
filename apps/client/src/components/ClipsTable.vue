@@ -386,6 +386,7 @@ th.active {
     grid-area: thumb;
     width: 104px;
     text-align: left;
+    padding-left: 0;
   }
 
   .thumb {
