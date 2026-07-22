@@ -3,10 +3,12 @@ import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { useClips, type SortDir, type SortKey } from './lib/clips';
 import { smoothScrollTo } from './lib/scroll';
 import { randomPeek, playRandomPeekSound } from './lib/peek';
+import { isOpaqueAtEvent } from './lib/hittest';
 import SiteHeader from './components/SiteHeader.vue';
 import SearchBar from './components/SearchBar.vue';
 import ClipsTable from './components/ClipsTable.vue';
 import SidePeekers from './components/SidePeekers.vue';
+import BackToTop from './components/BackToTop.vue';
 
 const { loading, error, query, sortKey, sortDir, visible, load, setSort } =
   useClips();
@@ -14,6 +16,17 @@ const { loading, error, query, sortKey, sortDir, visible, load, setSort } =
 const expandedId = ref<number | null>(null);
 const searchBar = ref<InstanceType<typeof SearchBar> | null>(null);
 const bottomPeek = randomPeek();
+const peekHot = ref(false);
+
+const samplePeek = (e: PointerEvent) => {
+  peekHot.value = isOpaqueAtEvent(e);
+};
+const onPeekLeave = () => {
+  peekHot.value = false;
+};
+const onPeek = (e: MouseEvent) => {
+  if (isOpaqueAtEvent(e)) playRandomPeekSound();
+};
 
 const readUrl = () => {
   const raw = new URLSearchParams(location.search).get('video');
@@ -79,6 +92,7 @@ onUnmounted(() => {
 
 <template>
   <SidePeekers />
+  <BackToTop />
 
   <main class="container">
     <SiteHeader />
@@ -129,11 +143,15 @@ onUnmounted(() => {
     <img
       v-if="bottomPeek"
       class="peek-bottom"
+      :class="{ hot: peekHot }"
       :src="bottomPeek"
       alt=""
       aria-hidden="true"
       draggable="false"
-      @click="playRandomPeekSound"
+      @pointermove="samplePeek"
+      @pointerdown="samplePeek"
+      @pointerleave="onPeekLeave"
+      @click="onPeek"
     />
   </main>
 </template>
@@ -167,13 +185,16 @@ onUnmounted(() => {
     padding-top: 1.25rem;
     width: min(340px, 72vw);
     height: auto;
-    cursor: pointer;
+    cursor: default;
     user-select: none;
     -webkit-user-select: none;
     transform-origin: bottom center;
     transition: transform 0.12s ease;
   }
-  .peek-bottom:active {
+  .peek-bottom.hot {
+    cursor: pointer;
+  }
+  .peek-bottom.hot:active {
     transform: scale(0.97) translateY(2%);
   }
 }

@@ -12,22 +12,28 @@ const copied = ref(false);
 
 // Exiting native fullscreen leaves the page scrolled off the still-open panel.
 // Scroll the clip's row back under the header, matching how opening it scrolls.
+const scrollRowIntoView = () => {
+  const row = document.querySelector<HTMLElement>(
+    `[data-clip="${props.clip.id}"]`,
+  );
+  if (!row) return;
+  // thead is hidden on mobile (offsetHeight 0), so this is just a small margin.
+  const thead = document.querySelector<HTMLElement>('.clips thead');
+  const offset = (thead?.offsetHeight ?? 0) + 16;
+  const top = row.getBoundingClientRect().top + window.scrollY - offset;
+  smoothScrollTo(top, 320);
+};
+
 const onFullscreenChange = () => {
   const fs =
     document.fullscreenElement ??
     (document as unknown as { webkitFullscreenElement?: Element })
       .webkitFullscreenElement;
   if (fs) return;
-  const row = document.querySelector<HTMLElement>(
-    `[data-clip="${props.clip.id}"]`,
-  );
-  if (!row) return;
-  const thead = document.querySelector<HTMLElement>('.clips thead');
-  const offset = (thead?.offsetHeight ?? 48) + 16;
-  const top = row.getBoundingClientRect().top + window.scrollY - offset;
-  requestAnimationFrame(() =>
-    requestAnimationFrame(() => smoothScrollTo(top, 320)),
-  );
+  // Re-assert: mobile browsers do their own scroll on exit and the layout keeps
+  // settling (address bar), so recompute fresh and land it again to win.
+  requestAnimationFrame(() => requestAnimationFrame(scrollRowIntoView));
+  setTimeout(scrollRowIntoView, 300);
 };
 
 onMounted(() => {
@@ -69,13 +75,13 @@ const copyLink = async () => {
         <span class="key">Sources</span>
         <SourceLinks :sources="clip.sources" />
       </div>
-      <div class="col col-date">
-        <span class="key">Stream date</span>
-        <span class="value">{{ formatDate(clip.streamAt) }}</span>
-      </div>
-      <div class="col col-date">
+      <div class="col col-date col-added">
         <span class="key">Added</span>
         <span class="value">{{ formatDate(clip.addedAt) }}</span>
+      </div>
+      <div class="col col-date col-stream">
+        <span class="key">Stream date</span>
+        <span class="value">{{ formatDate(clip.streamAt) }}</span>
       </div>
     </div>
 
@@ -202,9 +208,20 @@ const copyLink = async () => {
 
 @media (max-width: 640px) {
   .meta {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
     gap: 1rem;
     padding-right: 0;
+  }
+  .col-sources {
+    grid-column: 1 / -1;
+  }
+  .col-added {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .col-stream {
+    grid-column: 2;
+    grid-row: 2;
   }
 }
 </style>

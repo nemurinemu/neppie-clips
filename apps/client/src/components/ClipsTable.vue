@@ -189,6 +189,7 @@ th.active {
 
 .clip-row {
   cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .clip-row td {
@@ -207,8 +208,10 @@ th.active {
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
-.clip-row:hover:not(.open) td {
-  background: var(--row-hover);
+@media (hover: hover) {
+  .clip-row:hover:not(.open) td {
+    background: var(--row-hover);
+  }
 }
 
 .clip-row:focus-visible {
@@ -269,8 +272,10 @@ th.active {
   transition: opacity 0.15s ease;
 }
 
-.clip-row:hover .play {
-  opacity: 1;
+@media (hover: hover) {
+  .clip-row:hover .play {
+    opacity: 1;
+  }
 }
 
 .col-desc {
@@ -319,9 +324,11 @@ th.active {
   height: 20px;
 }
 
-.dl:hover {
-  color: var(--accent-ink);
-  background: var(--accent-soft);
+@media (hover: hover) {
+  .dl:hover {
+    color: var(--accent-ink);
+    background: var(--accent-soft);
+  }
 }
 
 .expand-row td {
@@ -336,7 +343,7 @@ th.active {
   color: var(--ink-faint);
 }
 
-@media (max-width: 720px) {
+@media (max-width: 999px) {
   .col-sources {
     display: none;
   }
