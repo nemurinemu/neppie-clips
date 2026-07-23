@@ -7,7 +7,6 @@ import { Api, TelegramClient } from 'teleproto';
 import { config } from './config';
 import { parseCaption } from './parse-caption';
 import { extractYoutubeId, fetchYoutubeMetadata } from './youtube';
-import { Video } from '@neppie-clips/shared';
 
 const execFileAsync = promisify(execFile);
 
@@ -53,9 +52,13 @@ export const processVideo = async (
     `
     INSERT INTO videos (telegram_msg_id, description, added_at, grouped_id, size_bytes)
     VALUES (?, ?, ?, ?, ?)
-    ON CONFLICT(telegram_msg_id) DO UPDATE SET
-      description = excluded.description,
-      size_bytes = excluded.size_bytes
+    `,
+  );
+
+  const updateVideo = db.prepare(
+    `
+    UPDATE videos SET description = ?, size_bytes = ?
+    WHERE telegram_msg_id = ?
     `,
   );
 
@@ -72,20 +75,20 @@ export const processVideo = async (
     ytIds.length > 0 ? await fetchYoutubeMetadata(ytIds) : new Map();
 
   const tx = db.transaction(() => {
-    insertVideo.run(
-      msg.id,
-      description,
-      msg.date,
-      msg.groupedId?.toString() ?? null,
-      sizeBytes,
-    );
-    const videoId =
-      exists?.id ??
-      (
-        db
-          .prepare('SELECT id FROM videos WHERE telegram_msg_id = ?')
-          .get(msg.id) as Pick<Video, 'id'>
-      ).id;
+    let videoId: number;
+    if (exists) {
+      updateVideo.run(description, sizeBytes, msg.id);
+      videoId = exists.id;
+    } else {
+      const info = insertVideo.run(
+        msg.id,
+        description,
+        msg.date,
+        msg.groupedId?.toString() ?? null,
+        sizeBytes,
+      );
+      videoId = Number(info.lastInsertRowid);
+    }
     deleteSources.run(videoId);
     for (const url of sources) {
       const ytId = extractYoutubeId(url);
