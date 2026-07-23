@@ -9,6 +9,7 @@ const props = defineProps<{ clip: Clip }>();
 const emit = defineEmits<{ close: [] }>();
 
 const copied = ref(false);
+const player = ref<HTMLVideoElement | null>(null);
 
 // Exiting native fullscreen leaves the page scrolled off the still-open panel.
 // Scroll the clip's row back under the header, matching how opening it scrolls.
@@ -39,6 +40,9 @@ const onFullscreenChange = () => {
 onMounted(() => {
   document.addEventListener('fullscreenchange', onFullscreenChange);
   document.addEventListener('webkitfullscreenchange', onFullscreenChange);
+  // Move focus off the clip row (role="button") so Space controls the video
+  // instead of closing the clip.
+  player.value?.focus({ preventScroll: true });
 });
 onUnmounted(() => {
   document.removeEventListener('fullscreenchange', onFullscreenChange);
@@ -60,6 +64,7 @@ const copyLink = async () => {
 <template>
   <div class="panel">
     <video
+      ref="player"
       class="player"
       :src="clip.videoUrl"
       :poster="clip.thumbUrl"
