@@ -89,6 +89,13 @@ export const processVideo = async (
     'INSERT INTO sources (video_id, url, youtube_title, youtube_published_at) VALUES (?, ?, ?, ?)',
   );
 
+  const shareIdExists = db.prepare('SELECT 1 FROM videos WHERE share_id = ?');
+  const uniqueShareId = () => {
+    let id = generateShareId();
+    while (shareIdExists.get(id)) id = generateShareId();
+    return id;
+  };
+
   const ytIds = sources
     .map(extractYoutubeId)
     .filter((id): id is string => !!id);
@@ -101,7 +108,7 @@ export const processVideo = async (
     } else {
       insertVideo.run(
         msg.id,
-        generateShareId(),
+        uniqueShareId(),
         description,
         msg.date,
         msg.groupedId?.toString() ?? null,
