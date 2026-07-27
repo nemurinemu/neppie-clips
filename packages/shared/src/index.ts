@@ -2,9 +2,12 @@ import path from 'node:path';
 
 export interface Video {
   id: number;
-  telegramMsgId: number;
+  shareId: string;
   description: string;
+  clipNumber: number;
   addedAt: string;
+  width: string;
+  height: string;
   groupedId: string | null;
   sizeBytes: number | null;
 }
@@ -19,9 +22,12 @@ export interface Source {
 
 export interface VideoResponse {
   id: number;
-  telegramMsgId: number;
+  shareId: string;
   description: string;
+  clipNumber: number;
   addedAt: string;
+  width: string;
+  height: string;
   sizeBytes: number | null;
   sources: Pick<Source, 'url' | 'youtubeTitle' | 'youtubePublishedAt'>[];
 }

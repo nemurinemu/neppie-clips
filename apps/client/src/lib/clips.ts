@@ -11,8 +11,9 @@ export interface ClipSource {
 }
 
 export interface Clip {
-  id: number;
   mediaId: number;
+  clipNumber: number;
+  shareId: string;
   description: string;
   addedAt: Date | null;
   streamAt: Date | null;
@@ -23,7 +24,7 @@ export interface Clip {
   search: string;
 }
 
-export type SortKey = 'id' | 'description' | 'addedAt' | 'streamAt';
+export type SortKey = 'clipNumber' | 'description' | 'addedAt' | 'streamAt';
 export type SortDir = 'asc' | 'desc';
 
 const toClip = (v: VideoResponse): Clip => {
@@ -40,14 +41,15 @@ const toClip = (v: VideoResponse): Clip => {
     .sort((a, b) => a.getTime() - b.getTime())[0];
 
   return {
-    id: v.id,
-    mediaId: v.telegramMsgId,
+    mediaId: v.id,
+    clipNumber: v.clipNumber,
+    shareId: v.shareId,
     description: v.description ?? '',
     addedAt: parseDate(v.addedAt),
     streamAt: streamAt ?? null,
     sizeBytes: v.sizeBytes,
-    thumbUrl: config.thumbUrl(v.telegramMsgId),
-    videoUrl: config.videoUrl(v.telegramMsgId),
+    thumbUrl: config.thumbUrl(v.id),
+    videoUrl: config.videoUrl(v.id),
     sources,
     search: [v.description, ...sources.map((s) => s.title)]
       .join(' ')
@@ -63,7 +65,7 @@ export const useClips = () => {
   const error = ref<string | null>(null);
 
   const query = ref('');
-  const sortKey = ref<SortKey>('id');
+  const sortKey = ref<SortKey>('clipNumber');
   const sortDir = ref<SortDir>('desc');
 
   const load = async () => {
@@ -99,7 +101,7 @@ export const useClips = () => {
     const dir = sortDir.value === 'asc' ? 1 : -1;
     const key = sortKey.value;
     filtered.sort((a, b) => {
-      if (key === 'id') return (a.id - b.id) * dir;
+      if (key === 'clipNumber') return (a.clipNumber - b.clipNumber) * dir;
       if (key === 'description') {
         return a.description.localeCompare(b.description) * dir;
       }

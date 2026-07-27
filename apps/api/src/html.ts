@@ -21,7 +21,8 @@ const escapeAttr = (s: string): string =>
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
 
-const escapeKey = (k: string): string => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeKey = (k: string): string =>
+  k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Rewrite the content="" of the <meta property|name="key"> tag (tag may span
 // lines; [^>] matches newlines up to the first '>').
@@ -38,6 +39,11 @@ const setMeta = (html: string, key: string, val: string): string => {
   );
 };
 
+const addMeta = (html: string, key: string, val: string): string => {
+  const tag = `<meta property="${key}" content="${escapeAttr(val)}">`;
+  return html.replace(/<\/head>/i, `${tag}\n</head>`);
+};
+
 const removeMeta = (html: string, key: string): string =>
   html.replace(
     new RegExp(
@@ -51,6 +57,7 @@ export interface MetaOverrides {
   title: string;
   image: string;
   url: string;
+  video?: { url: string; type: string; width?: number; height?: number };
 }
 
 // Only the preview title, image and url are per-clip. The <title> (browser tab)
@@ -65,5 +72,15 @@ export const injectMeta = (html: string, o: MetaOverrides): string => {
   // A clip thumbnail isn't the banner's size — drop the stale dimension hints.
   out = removeMeta(out, 'og:image:width');
   out = removeMeta(out, 'og:image:height');
+  if (o.video) {
+    out = setMeta(out, 'og:type', 'video.other');
+    out = addMeta(out, 'og:video', o.video.url);
+    out = addMeta(out, 'og:video:secure_url', o.video.url);
+    out = addMeta(out, 'og:video:type', o.video.type);
+    if (o.video.width)
+      out = addMeta(out, 'og:video:width', String(o.video.width));
+    if (o.video.height)
+      out = addMeta(out, 'og:video:height', String(o.video.height));
+  }
   return out;
 };

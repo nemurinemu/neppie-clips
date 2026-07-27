@@ -8,13 +8,13 @@ import VideoPanel from './VideoPanel.vue';
 
 const props = defineProps<{
   clips: Clip[];
-  expandedId: number | null;
+  expandedId: string | null;
   sortKey: SortKey;
   sortDir: SortDir;
 }>();
 
 const emit = defineEmits<{
-  toggle: [id: number];
+  toggle: [id: string];
   sort: [key: SortKey];
 }>();
 
@@ -55,11 +55,11 @@ watch(
         <tr>
           <th
             class="col-id sortable"
-            :class="{ active: sortKey === 'id' }"
-            :aria-sort="ariaSort('id')"
-            @click="emit('sort', 'id')"
+            :class="{ active: sortKey === 'clipNumber' }"
+            :aria-sort="ariaSort('clipNumber')"
+            @click="emit('sort', 'clipNumber')"
           >
-            # <span class="arrow">{{ arrow('id') }}</span>
+            # <span class="arrow">{{ arrow('clipNumber') }}</span>
           </th>
           <th class="col-thumb">Clip</th>
           <th
@@ -78,19 +78,19 @@ watch(
       </thead>
 
       <tbody>
-        <template v-for="clip in clips" :key="clip.id">
+        <template v-for="clip in clips" :key="clip.shareId">
           <tr
             class="clip-row"
-            :class="{ open: expandedId === clip.id }"
-            :data-clip="clip.id"
+            :class="{ open: expandedId === clip.shareId }"
+            :data-clip="clip.shareId"
             tabindex="0"
             role="button"
-            :aria-expanded="expandedId === clip.id"
-            @click="emit('toggle', clip.id)"
-            @keydown.enter.prevent="emit('toggle', clip.id)"
-            @keydown.space.prevent="emit('toggle', clip.id)"
+            :aria-expanded="expandedId === clip.shareId"
+            @click="emit('toggle', clip.shareId)"
+            @keydown.enter.prevent="emit('toggle', clip.shareId)"
+            @keydown.space.prevent="emit('toggle', clip.shareId)"
           >
-            <td class="col-id">{{ clip.id }}</td>
+            <td class="col-id">{{ clip.clipNumber }}</td>
             <td class="col-thumb">
               <span class="thumb">
                 <img
@@ -98,12 +98,12 @@ watch(
                   :alt="clip.description"
                   loading="lazy"
                 />
-                <span class="play">{{ expandedId === clip.id ? '⏸' : '▶' }}</span>
+                <span class="play">{{ expandedId === clip.shareId ? '⏸' : '▶' }}</span>
               </span>
             </td>
             <td class="col-desc">{{ clip.description || 'Untitled clip' }}</td>
             <td class="col-date col-addedAt">
-              <span class="row-id-mobile">#{{ clip.id }} · </span
+              <span class="row-id-mobile">#{{ clip.clipNumber }} · </span
               >{{ formatDate(clip.addedAt) }}
             </td>
             <td class="col-date col-streamAt">{{ formatDate(clip.streamAt) }}</td>
@@ -114,7 +114,7 @@ watch(
               <a
                 class="dl"
                 :href="clip.videoUrl"
-                :download="downloadName(clip.id, clip.description)"
+                :download="downloadName(clip.clipNumber, clip.description)"
                 title="Download clip"
                 aria-label="Download clip"
                 @click.stop
@@ -133,9 +133,9 @@ watch(
             </td>
           </tr>
 
-          <tr v-if="expandedId === clip.id" class="expand-row">
+          <tr v-if="expandedId === clip.shareId" class="expand-row">
             <td :colspan="7">
-              <VideoPanel :clip="clip" @close="emit('toggle', clip.id)" />
+              <VideoPanel :clip="clip" @close="emit('toggle', clip.shareId)" />
             </td>
           </tr>
         </template>

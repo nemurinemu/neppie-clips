@@ -7,6 +7,9 @@ import { Api, TelegramClient } from 'teleproto';
 import { config } from './config';
 import { parseCaption } from './parse-caption';
 import { extractYoutubeId, fetchYoutubeMetadata } from './youtube';
+import { randomBytes } from 'node:crypto';
+
+const generateShareId = () => randomBytes(6).toString('base64url');
 
 const execFileAsync = promisify(execFile);
 
@@ -17,8 +20,8 @@ export const processVideo = async (
   db: Database.Database,
 ) => {
   const exists = db
-    .prepare('SELECT id FROM videos WHERE telegram_msg_id = ?')
-    .get(msg.id) as { id: number } | undefined;
+    .prepare('SELECT 1 FROM videos WHERE telegram_msg_id = ?')
+    .get(msg.id);
 
   const videoPath = path.resolve(config.clipsDir, `${msg.id}.mp4`);
 
@@ -43,21 +46,39 @@ export const processVideo = async (
       thumbPath,
     ]);
   }
+
   const { description, sources } = parseCaption(caption);
   const sizeBytes = fs.existsSync(videoPath)
     ? fs.statSync(videoPath).size
     : null;
-
+  let width: number | undefined;
+  let height: number | undefined;
+  if (fs.existsSync(videoPath)) {
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v',
+      'error',
+      '-select_streams',
+      'v:0',
+      '-show_entries',
+      'stream=width,height',
+      '-of',
+      'csv=p=0:s=x',
+      videoPath,
+    ]);
+    const [w, h] = stdout.trim().split('x').map(Number);
+    width = Number.isFinite(w) ? w : undefined;
+    height = Number.isFinite(h) ? h : undefined;
+  }
   const insertVideo = db.prepare(
     `
-    INSERT INTO videos (telegram_msg_id, description, added_at, grouped_id, size_bytes)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO videos (telegram_msg_id, share_id, description, added_at, grouped_id, size_bytes, width, height)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `,
   );
 
   const updateVideo = db.prepare(
     `
-    UPDATE videos SET description = ?, size_bytes = ?
+    UPDATE videos SET description = ?, size_bytes = ?, width = ?, height = ?
     WHERE telegram_msg_id = ?
     `,
   );
@@ -75,26 +96,26 @@ export const processVideo = async (
     ytIds.length > 0 ? await fetchYoutubeMetadata(ytIds) : new Map();
 
   const tx = db.transaction(() => {
-    let videoId: number;
     if (exists) {
-      updateVideo.run(description, sizeBytes, msg.id);
-      videoId = exists.id;
+      updateVideo.run(description, sizeBytes, width, height, msg.id);
     } else {
-      const info = insertVideo.run(
+      insertVideo.run(
         msg.id,
+        generateShareId(),
         description,
         msg.date,
         msg.groupedId?.toString() ?? null,
         sizeBytes,
+        width,
+        height,
       );
-      videoId = Number(info.lastInsertRowid);
     }
-    deleteSources.run(videoId);
+    deleteSources.run(msg.id);
     for (const url of sources) {
       const ytId = extractYoutubeId(url);
       const meta = ytId ? ytMeta.get(ytId) : undefined;
       insertSource.run(
-        videoId,
+        msg.id,
         url,
         meta?.title ?? null,
         meta?.publishedAt ?? null,

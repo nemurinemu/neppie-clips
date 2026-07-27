@@ -3,11 +3,12 @@ import { config } from './config';
 import { Api, TelegramClient } from 'teleproto';
 import { StringSession } from 'teleproto/sessions';
 import { Entity } from 'teleproto/define';
-import { NewMessage, EditedMessage } from 'teleproto/events';
+import { NewMessage, EditedMessage, DeletedMessage } from 'teleproto/events';
 import { applySchema } from './schema';
 import { processVideo } from './process-video';
 import { parseCaption } from './parse-caption';
 import { extractYoutubeId, fetchYoutubeMetadata } from './youtube';
+import { deleteVideos } from './delete-video';
 
 const main = async () => {
   const db = new Database(config.dbPath);
@@ -82,17 +83,17 @@ const handleEdit = async (
 ) => {
   if (!msg.video) return;
 
-  const existingRow = db
-    .prepare('SELECT id FROM videos WHERE telegram_msg_id = ?')
-    .get(msg.id) as { id: number } | undefined;
+  const exists = db
+    .prepare('SELECT 1 FROM videos WHERE telegram_msg_id = ?')
+    .get(msg.id);
 
-  if (!existingRow && !msg.groupedId) {
+  if (!exists && !msg.groupedId) {
     if (msg.message) {
       await processVideo(client, msg, msg.message, db);
       return;
     }
   }
-  if (!existingRow) return;
+  if (!exists) return;
 
   let caption = msg.message;
   let affectedIds: number[];
@@ -100,13 +101,13 @@ const handleEdit = async (
   if (msg.groupedId) {
     const groupKey = msg.groupedId.toString();
     const siblings = db
-      .prepare('SELECT id FROM videos WHERE grouped_id = ?')
-      .all(groupKey) as { id: number }[];
+      .prepare('SELECT telegram_msg_id FROM videos WHERE grouped_id = ?')
+      .all(groupKey) as { telegram_msg_id: number }[];
     if (!caption) return;
-    affectedIds = siblings.map((s) => s.id);
+    affectedIds = siblings.map((s) => s.telegram_msg_id);
   } else {
     if (!caption) return;
-    affectedIds = [existingRow.id];
+    affectedIds = [msg.id];
   }
 
   const { description, sources } = parseCaption(caption);
@@ -118,7 +119,7 @@ const handleEdit = async (
     ytIds.length > 0 ? await fetchYoutubeMetadata(ytIds) : new Map();
 
   const updateStmt = db.prepare(
-    'UPDATE videos SET description = ? WHERE id = ?',
+    'UPDATE videos SET description = ? WHERE telegram_msg_id = ?',
   );
   const deleteSourcesStmt = db.prepare(
     'DELETE FROM sources WHERE video_id = ?',
@@ -194,6 +195,11 @@ const listenLive = async (
       await handleEdit(client, event.message, db);
     },
     new EditedMessage({ chats: [channel.id] }),
+  );
+
+  client.addEventHandler(
+    (event) => deleteVideos(event.deletedIds, db),
+    new DeletedMessage({ chats: [channel.id] }),
   );
 };
 

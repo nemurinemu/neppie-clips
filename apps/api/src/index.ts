@@ -20,13 +20,17 @@ if (config.nodeEnv !== 'production') {
 
 const videosStmt = db.prepare(`
   SELECT
-    id,
-    telegram_msg_id as telegramMsgId,
+    telegram_msg_id as id,
+    share_id as shareId,
     description,
+    ROW_NUMBER() OVER (ORDER BY telegram_msg_id ASC) AS clipNumber,
     added_at as addedAt,
-    size_bytes as sizeBytes
+    size_bytes as sizeBytes,
+    width,
+    height
   FROM videos
-  ORDER BY added_at DESC  
+  ORDER BY added_at DESC
+
   `);
 
 const sourcesStmt = db.prepare(`
@@ -57,9 +61,9 @@ app.get('/api/videos', (req: Request, res: Response) => {
 // (production), so dev keeps serving the page through Vite untouched.
 if (config.webIndex) {
   const webIndex = config.webIndex;
-  const clipByIdStmt = db.prepare(`
-    SELECT id, telegram_msg_id as telegramMsgId, description
-    FROM videos WHERE id = ?
+  const clipByShareStmt = db.prepare(`
+    SELECT telegram_msg_id as id, description, width, height
+    FROM videos WHERE share_id = ?
   `);
 
   app.get('/', (req: Request, res: Response) => {
@@ -72,20 +76,31 @@ if (config.webIndex) {
     }
 
     const raw = req.query.video;
-    const id = typeof raw === 'string' ? Number(raw) : NaN;
-    if (Number.isInteger(id)) {
-      const clip = clipByIdStmt.get(id) as
-        | { id: number; telegramMsgId: number; description: string | null }
+    const shareId = typeof raw === 'string' ? raw : '';
+    if (shareId) {
+      const clip = clipByShareStmt.get(shareId) as
+        | {
+            id: number;
+            description: string | null;
+            width: number | null;
+            height: number | null;
+          }
         | undefined;
       if (clip) {
         const base =
           config.baseUrl || `${req.protocol}://${req.get('host') ?? ''}`;
         const desc = (clip.description ?? '').trim();
-        const name = desc.split('\n')[0]?.trim() || `Neppie clip #${clip.id}`;
+        const name = desc.split('\n')[0]?.trim() || 'Neppie clip';
         html = injectMeta(html, {
           title: `${name} | Neppie clips`,
-          image: `${base}/media/thumbnails/${clip.telegramMsgId}.webp`,
-          url: `${base}/?video=${clip.id}`,
+          image: `${base}/media/thumbnails/${clip.id}.webp`,
+          url: `${base}/?video=${shareId}`,
+          video: {
+            url: `${base}/media/videos/${clip.id}.mp4`,
+            type: 'video/mp4',
+            width: clip.width ?? undefined,
+            height: clip.height ?? undefined,
+          },
         });
       }
     }

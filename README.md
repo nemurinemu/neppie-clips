@@ -1,6 +1,6 @@
 # neppie-clips
 
-Neppie clip fetcher + api + frontend :)
+Neppie clip fetcher + api + vibecoded frontend :)
 
 ## Dev setup
 
@@ -21,9 +21,9 @@ Neppie clip fetcher + api + frontend :)
 The client app lives in `apps/client` (Vue 3 + Vite).
 
 ```bash
+$ pnpm install
 $ pnpm build:shared          # emit shared types first
-$ pnpm --filter @neppie-clips/api dev       # serves /api and /media in dev
-$ pnpm --filter @neppie-clips/client dev
+$ pnpm dev
 ```
 
 Copy `.env.example` to `.env.development` and set `VITE_DEV_PROXY_TARGET` to the
@@ -40,5 +40,13 @@ Create `.env.production` based on `.env.example`, then run:
 ```bash
 $ pnpm install
 
-$ pnpm prod:deploy
+$ pnpm deploy:all
+```
+
+Or alternatively deploy any service separately:
+
+```bash
+$ pnpm deploy:fetcher
+$ pnpm deploy:api
+$ pnpm deploy:client
 ```

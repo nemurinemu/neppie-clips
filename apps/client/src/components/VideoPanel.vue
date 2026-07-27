@@ -15,7 +15,7 @@ const player = ref<HTMLVideoElement | null>(null);
 // Scroll the clip's row back under the header, matching how opening it scrolls.
 const scrollRowIntoView = () => {
   const row = document.querySelector<HTMLElement>(
-    `[data-clip="${props.clip.id}"]`,
+    `[data-clip="${props.clip.shareId}"]`,
   );
   if (!row) return;
   // thead is hidden on mobile (offsetHeight 0), so this is just a small margin.
@@ -50,7 +50,7 @@ onUnmounted(() => {
 });
 
 const copyLink = async () => {
-  const url = `${location.origin}${location.pathname}?video=${props.clip.id}`;
+  const url = `${location.origin}${location.pathname}?video=${props.clip.shareId}`;
   try {
     await navigator.clipboard.writeText(url);
     copied.value = true;
@@ -94,7 +94,7 @@ const copyLink = async () => {
       <a
         class="btn primary"
         :href="clip.videoUrl"
-        :download="downloadName(clip.id, clip.description)"
+        :download="downloadName(clip.clipNumber, clip.description)"
         @click.stop
       >
         Download{{ clip.sizeBytes != null ? ` (${formatSize(clip.sizeBytes)})` : '' }}

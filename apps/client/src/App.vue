@@ -13,7 +13,7 @@ import BackToTop from './components/BackToTop.vue';
 const { loading, error, query, sortKey, sortDir, visible, load, setSort } =
   useClips();
 
-const expandedId = ref<number | null>(null);
+const expandedId = ref<string | null>(null);
 const searchBar = ref<InstanceType<typeof SearchBar> | null>(null);
 const bottomPeek = randomPeek();
 const {
@@ -25,13 +25,9 @@ const {
   release: onPeekUp,
 } = usePeekPress();
 
-const readUrl = () => {
-  const raw = new URLSearchParams(location.search).get('video');
-  const id = raw ? Number(raw) : NaN;
-  return Number.isInteger(id) ? id : null;
-};
+const readUrl = () => new URLSearchParams(location.search).get('video');
 
-const toggle = (id: number) => {
+const toggle = (id: string) => {
   expandedId.value = expandedId.value === id ? null : id;
 };
 
@@ -42,7 +38,7 @@ watch([query, sortKey, sortDir], () => {
 watch(expandedId, (id) => {
   const url = new URL(location.href);
   if (id === null) url.searchParams.delete('video');
-  else url.searchParams.set('video', String(id));
+  else url.searchParams.set('video', id);
   history.replaceState(history.state, '', url);
 });
 
@@ -76,7 +72,7 @@ onMounted(async () => {
   window.addEventListener('keydown', onKeydown);
   await load();
   const target = readUrl();
-  if (target !== null && visible.value.some((c) => c.id === target)) {
+  if (target !== null && visible.value.some((c) => c.shareId === target)) {
     expandedId.value = target;
   }
 });
@@ -108,8 +104,8 @@ onUnmounted(() => {
         <option value="streamAt:asc">Oldest stream</option>
         <option value="description:asc">Description A–Z</option>
         <option value="description:desc">Description Z–A</option>
-        <option value="id:asc">ID ascending</option>
-        <option value="id:desc">ID descending</option>
+        <option value="clipNumber:asc"># ascending</option>
+        <option value="clipNumber:desc"># descending</option>
       </select>
       <span v-if="!loading && !error" class="count">
         {{ visible.length }} clip{{ visible.length === 1 ? '' : 's' }}
