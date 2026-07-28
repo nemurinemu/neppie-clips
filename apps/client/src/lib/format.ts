@@ -34,6 +34,16 @@ export const downloadName = (id: number, description: string): string => {
   return slug ? `${id}-${slug}.mp4` : `${id}.mp4`;
 };
 
+// The `download` attribute is ignored cross-origin (videos live on the media
+// host), so pass the filename via ?name= for nginx to force it through
+// Content-Disposition.
+export const downloadUrl = (
+  videoUrl: string,
+  id: number,
+  description: string,
+): string =>
+  `${videoUrl}?name=${encodeURIComponent(downloadName(id, description))}`;
+
 export const formatSize = (bytes: number | null): string =>
   bytes == null ? '—' : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 

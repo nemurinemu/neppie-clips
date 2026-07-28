@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { nextTick, watch } from 'vue';
 import type { Clip, SortDir, SortKey } from '../lib/clips';
-import { downloadName, formatDate } from '../lib/format';
+import { downloadName, downloadUrl, formatDate } from '../lib/format';
 import { smoothScrollTo } from '../lib/scroll';
 import SourceLinks from './SourceLinks.vue';
 import VideoPanel from './VideoPanel.vue';
@@ -113,7 +113,7 @@ watch(
             <td class="col-dl">
               <a
                 class="dl"
-                :href="clip.videoUrl"
+                :href="downloadUrl(clip.videoUrl, clip.clipNumber, clip.description)"
                 :download="downloadName(clip.clipNumber, clip.description)"
                 title="Download clip"
                 aria-label="Download clip"

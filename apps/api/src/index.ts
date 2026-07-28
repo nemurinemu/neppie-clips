@@ -89,6 +89,7 @@ if (config.webIndex) {
       if (clip) {
         const base =
           config.baseUrl || `${req.protocol}://${req.get('host') ?? ''}`;
+        const videoBase = config.videoBase || `${base}/media`;
         const desc = (clip.description ?? '').trim();
         const name = desc.split('\n')[0]?.trim() || 'Neppie clip';
         html = injectMeta(html, {
@@ -96,7 +97,7 @@ if (config.webIndex) {
           image: `${base}/media/thumbnails/${clip.id}.webp`,
           url: `${base}/?video=${shareId}`,
           video: {
-            url: `${base}/media/videos/${clip.id}.mp4`,
+            url: `${videoBase}/videos/${clip.id}.mp4`,
             type: 'video/mp4',
             width: clip.width ?? undefined,
             height: clip.height ?? undefined,

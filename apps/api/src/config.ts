@@ -26,6 +26,7 @@ const envSchema = z.object({
   // origin used for absolute og:image/og:url (usually leave it unset).
   WEB_INDEX: optionalString,
   BASE_URL: optionalString,
+  VIDEO_BASE: optionalString,
 });
 
 const validateConfig = () => {
@@ -80,6 +81,7 @@ export const initConfig = () => {
     corsOrigin: env.CORS_ORIGIN ?? '',
     webIndex: env.WEB_INDEX,
     baseUrl: env.BASE_URL,
+    videoBase: env.VIDEO_BASE,
     ...paths,
   };
 };

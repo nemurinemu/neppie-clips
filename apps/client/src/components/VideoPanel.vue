@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue';
 import type { Clip } from '../lib/clips';
-import { downloadName, formatDate, formatSize } from '../lib/format';
-import { smoothScrollTo } from '../lib/scroll';
+import { downloadName, downloadUrl, formatDate, formatSize } from '../lib/format';
+import { scrollToAnchor } from '../lib/scroll';
 import SourceLinks from './SourceLinks.vue';
 
 const props = defineProps<{ clip: Clip }>();
@@ -13,16 +13,26 @@ const player = ref<HTMLVideoElement | null>(null);
 
 // Exiting native fullscreen leaves the page scrolled off the still-open panel.
 // Scroll the clip's row back under the header, matching how opening it scrolls.
-const scrollRowIntoView = () => {
-  const row = document.querySelector<HTMLElement>(
-    `[data-clip="${props.clip.shareId}"]`,
-  );
-  if (!row) return;
-  // thead is hidden on mobile (offsetHeight 0), so this is just a small margin.
-  const thead = document.querySelector<HTMLElement>('.clips thead');
+// Nodes are cached because this is re-measured every frame while scrolling;
+// isConnected re-queries if Vue ever swaps the row out from under us.
+let row: HTMLElement | null = null;
+let thead: HTMLElement | null = null;
+
+const rowTop = () => {
+  if (!row?.isConnected) {
+    row = document.querySelector<HTMLElement>(
+      `[data-clip="${props.clip.shareId}"]`,
+    );
+  }
+  if (!row) return null;
+  if (!thead?.isConnected) {
+    thead = document.querySelector<HTMLElement>('.clips thead');
+  }
+  // thead is hidden below 700px (offsetHeight 0), so this is just a small
+  // margin there — and it re-reads, so crossing that breakpoint mid-rotation
+  // picks up the header appearing.
   const offset = (thead?.offsetHeight ?? 0) + 16;
-  const top = row.getBoundingClientRect().top + window.scrollY - offset;
-  smoothScrollTo(top, 320);
+  return row.getBoundingClientRect().top + window.scrollY - offset;
 };
 
 const onFullscreenChange = () => {
@@ -31,10 +41,12 @@ const onFullscreenChange = () => {
     (document as unknown as { webkitFullscreenElement?: Element })
       .webkitFullscreenElement;
   if (fs) return;
-  // Re-assert: mobile browsers do their own scroll on exit and the layout keeps
-  // settling (address bar), so recompute fresh and land it again to win.
-  requestAnimationFrame(() => requestAnimationFrame(scrollRowIntoView));
-  setTimeout(scrollRowIntoView, 300);
+  // Hold the row pinned: mobile browsers do their own scroll on exit, and a
+  // phone held upright only rotates back to portrait after this fires — the
+  // reflow moves the row by about a screen, so a one-shot scroll misses it.
+  requestAnimationFrame(() =>
+    scrollToAnchor(rowTop, { duration: 320, hold: 1200 }),
+  );
 };
 
 onMounted(() => {
@@ -93,7 +105,7 @@ const copyLink = async () => {
     <div class="actions">
       <a
         class="btn primary"
-        :href="clip.videoUrl"
+        :href="downloadUrl(clip.videoUrl, clip.clipNumber, clip.description)"
         :download="downloadName(clip.clipNumber, clip.description)"
         @click.stop
       >

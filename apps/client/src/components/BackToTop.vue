@@ -7,10 +7,13 @@ const flying = ref(false);
 const noAnim = ref(false);
 
 let ticking = false;
+// The toolbar is never re-created, so this runs every scroll frame off a
+// reference resolved once at mount.
+let toolbar: Element | null = null;
+
 const update = () => {
   ticking = false;
   if (flying.value) return;
-  const toolbar = document.querySelector('.toolbar');
   const past = toolbar
     ? toolbar.getBoundingClientRect().bottom < 0
     : window.scrollY > 300;
@@ -43,6 +46,7 @@ const onTransitionEnd = (e: TransitionEvent) => {
 };
 
 onMounted(() => {
+  toolbar = document.querySelector('.toolbar');
   window.addEventListener('scroll', onScroll, { passive: true });
   update();
 });
