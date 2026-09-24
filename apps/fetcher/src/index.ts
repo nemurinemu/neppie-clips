@@ -42,11 +42,17 @@ const main = async () => {
     process.once(signal, () => void shutdown(signal));
   }
 
-  const channel = await client.getEntity(config.channelName);
-  await backfill(client, channel, db);
+  const channel = await client.getEntity(config.telegramChannel);
+  if (config.skipBackfill) {
+    // Reading the channel once is what makes Telegram start sending its updates.
+    await client.getMessages(channel, { limit: 1 });
+    console.log('SKIP_BACKFILL set, skipping backfill');
+  } else {
+    await backfill(client, channel, db);
+  }
   listenLive(client, channel, db);
 
-  console.log('Clip fetcher running: backfill finished, listening for updates');
+  console.log('Clip fetcher running: listening for updates');
 };
 
 const backfill = async (
@@ -83,17 +89,17 @@ const handleEdit = async (
 ) => {
   if (!msg.video) return;
 
-  const exists = db
-    .prepare('SELECT 1 FROM videos WHERE telegram_msg_id = ?')
-    .get(msg.id);
+  const row = db
+    .prepare('SELECT id FROM videos WHERE telegram_msg_id = ?')
+    .get(msg.id) as { id: number } | undefined;
 
-  if (!exists && !msg.groupedId) {
+  if (!row && !msg.groupedId) {
     if (msg.message) {
       await processVideo(client, msg, msg.message, db);
       return;
     }
   }
-  if (!exists) return;
+  if (!row) return;
 
   let caption = msg.message;
   let affectedIds: number[];
@@ -101,13 +107,13 @@ const handleEdit = async (
   if (msg.groupedId) {
     const groupKey = msg.groupedId.toString();
     const siblings = db
-      .prepare('SELECT telegram_msg_id FROM videos WHERE grouped_id = ?')
-      .all(groupKey) as { telegram_msg_id: number }[];
+      .prepare('SELECT id FROM videos WHERE grouped_id = ?')
+      .all(groupKey) as { id: number }[];
     if (!caption) return;
-    affectedIds = siblings.map((s) => s.telegram_msg_id);
+    affectedIds = siblings.map((s) => s.id);
   } else {
     if (!caption) return;
-    affectedIds = [msg.id];
+    affectedIds = [row.id];
   }
 
   const { description, sources } = parseCaption(caption);
@@ -119,7 +125,7 @@ const handleEdit = async (
     ytIds.length > 0 ? await fetchYoutubeMetadata(ytIds) : new Map();
 
   const updateStmt = db.prepare(
-    'UPDATE videos SET description = ? WHERE telegram_msg_id = ?',
+    'UPDATE videos SET description = ?, updated_at = unixepoch() WHERE id = ?',
   );
   const deleteSourcesStmt = db.prepare(
     'DELETE FROM sources WHERE video_id = ?',

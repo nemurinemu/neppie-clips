@@ -20,6 +20,10 @@ export interface Clip {
   sizeBytes: number | null;
   thumbUrl: string;
   videoUrl: string;
+  verticalUrl: string | null;
+  verticalSizeBytes: number | null;
+  platform: 'telegram' | 'twitch';
+  twitchUrl: string | null;
   sources: ClipSource[];
   search: string;
 }
@@ -50,6 +54,10 @@ const toClip = (v: VideoResponse): Clip => {
     sizeBytes: v.sizeBytes,
     thumbUrl: config.thumbUrl(v.id),
     videoUrl: config.videoUrl(v.id),
+    verticalUrl: v.hasVertical ? config.verticalUrl(v.id) : null,
+    verticalSizeBytes: v.verticalSizeBytes ?? null,
+    platform: v.platform ?? 'telegram',
+    twitchUrl: v.twitchUrl ?? null,
     sources,
     search: [v.description, ...sources.map((s) => s.title)]
       .join(' ')

@@ -5,6 +5,7 @@ import compression from 'compression';
 import cors from 'cors';
 import { Video, VideoResponse } from '@neppie-clips/shared';
 import { readIndexHtml, injectMeta } from './html';
+import { adminRouter } from './admin';
 
 const app = express();
 app.set('trust proxy', true);
@@ -20,17 +21,22 @@ if (config.nodeEnv !== 'production') {
 
 const videosStmt = db.prepare(`
   SELECT
-    telegram_msg_id as id,
-    share_id as shareId,
-    description,
-    ROW_NUMBER() OVER (ORDER BY telegram_msg_id ASC) AS clipNumber,
-    added_at as addedAt,
-    size_bytes as sizeBytes,
-    width,
-    height
-  FROM videos
-  ORDER BY added_at DESC
-
+    v.id,
+    v.share_id as shareId,
+    v.description,
+    ROW_NUMBER() OVER (ORDER BY v.added_at ASC, v.id ASC) AS clipNumber,
+    v.added_at as addedAt,
+    v.size_bytes as sizeBytes,
+    v.width,
+    v.height,
+    v.source_platform as platform,
+    v.has_vertical as hasVertical,
+    v.vertical_size_bytes as verticalSizeBytes,
+    t.url as twitchUrl
+  FROM videos v
+  LEFT JOIN twitch_clips t ON t.video_id = v.id
+  WHERE v.size_bytes IS NOT NULL
+  ORDER BY v.added_at DESC
   `);
 
 const sourcesStmt = db.prepare(`
@@ -42,11 +48,14 @@ const sourcesStmt = db.prepare(`
   WHERE video_id = ?
   `);
 
+app.use('/api/admin', adminRouter());
+
 app.get('/api/videos', (req: Request, res: Response) => {
   try {
     const videos = videosStmt.all() as Video[];
     const result: VideoResponse[] = videos.map((video) => ({
       ...video,
+      hasVertical: !!video.hasVertical,
       sources: sourcesStmt.all(video.id) as VideoResponse['sources'],
     }));
     res.json(result);
@@ -62,7 +71,7 @@ app.get('/api/videos', (req: Request, res: Response) => {
 if (config.webIndex) {
   const webIndex = config.webIndex;
   const clipByShareStmt = db.prepare(`
-    SELECT telegram_msg_id as id, description, width, height
+    SELECT id, description, width, height
     FROM videos WHERE share_id = ?
   `);
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Clip } from '../lib/clips';
 import { downloadName, downloadUrl, formatDate, formatSize } from '../lib/format';
 import { scrollToAnchor } from '../lib/scroll';
@@ -10,6 +10,36 @@ const emit = defineEmits<{ close: [] }>();
 
 const copied = ref(false);
 const player = ref<HTMLVideoElement | null>(null);
+
+const ORIENTATION_KEY = 'neppie-clips:vertical';
+const readPref = () => {
+  try {
+    return localStorage.getItem(ORIENTATION_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+const showVertical = ref(!!props.clip.verticalUrl && readPref());
+watch(showVertical, (v) => {
+  try {
+    localStorage.setItem(ORIENTATION_KEY, v ? '1' : '0');
+  } catch {
+    /* storage unavailable */
+  }
+});
+
+const vertical = computed(() => showVertical.value && !!props.clip.verticalUrl);
+const activeSrc = computed(() =>
+  vertical.value ? props.clip.verticalUrl! : props.clip.videoUrl,
+);
+const activeSize = computed(() =>
+  vertical.value ? props.clip.verticalSizeBytes : props.clip.sizeBytes,
+);
+const activeName = computed(() =>
+  vertical.value
+    ? `${props.clip.description.split('\n')[0] ?? ''} vertical`
+    : props.clip.description,
+);
 
 // Exiting native fullscreen leaves the page scrolled off the still-open panel.
 // Scroll the clip's row back under the header, matching how opening it scrolls.
@@ -75,15 +105,37 @@ const copyLink = async () => {
 
 <template>
   <div class="panel">
-    <video
-      ref="player"
-      class="player"
-      :src="clip.videoUrl"
-      :poster="clip.thumbUrl"
-      controls
-      autoplay
-      playsinline
-    />
+    <div class="stage" :class="{ vertical }">
+      <video
+        ref="player"
+        class="player"
+        :src="activeSrc"
+        :poster="vertical ? undefined : clip.thumbUrl"
+        controls
+        autoplay
+        playsinline
+      />
+      <div v-if="clip.verticalUrl" class="orientation" role="tablist">
+        <button
+          role="tab"
+          :aria-selected="!vertical"
+          :class="{ active: !vertical }"
+          title="Horizontal"
+          @click.stop="showVertical = false"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="6" width="18" height="12" rx="2" /></svg>
+        </button>
+        <button
+          role="tab"
+          :aria-selected="vertical"
+          :class="{ active: vertical }"
+          title="Vertical"
+          @click.stop="showVertical = true"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="3" width="10" height="18" rx="2" /></svg>
+        </button>
+      </div>
+    </div>
 
     <p v-if="clip.description" class="description">{{ clip.description }}</p>
 
@@ -91,6 +143,18 @@ const copyLink = async () => {
       <div class="col col-sources">
         <span class="key">Sources</span>
         <SourceLinks :sources="clip.sources" />
+      </div>
+      <div v-if="clip.twitchUrl" class="col col-twitch">
+        <span class="key">Twitch</span>
+        <a
+          class="value link"
+          :href="clip.twitchUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          @click.stop
+        >
+          Open clip ↗
+        </a>
       </div>
       <div class="col col-date col-added">
         <span class="key">Added</span>
@@ -103,17 +167,17 @@ const copyLink = async () => {
     </div>
 
     <div class="actions">
-      <a
-        class="btn primary"
-        :href="downloadUrl(clip.videoUrl, clip.clipNumber, clip.description)"
-        :download="downloadName(clip.clipNumber, clip.description)"
-        @click.stop
-      >
-        Download{{ clip.sizeBytes != null ? ` (${formatSize(clip.sizeBytes)})` : '' }}
-      </a>
-      <button class="btn soft" @click.stop="copyLink">
+      <button class="btn primary" @click.stop="copyLink">
         {{ copied ? 'Copied!' : 'Copy link' }}
       </button>
+      <a
+        class="btn soft"
+        :href="downloadUrl(activeSrc, clip.clipNumber, activeName)"
+        :download="downloadName(clip.clipNumber, activeName)"
+        @click.stop
+      >
+        Download{{ activeSize != null ? ` (${formatSize(activeSize)})` : '' }}
+      </a>
       <button class="btn ghost" @click.stop="emit('close')">Close</button>
     </div>
   </div>
@@ -127,11 +191,74 @@ const copyLink = async () => {
   padding: 1rem;
 }
 
+.stage {
+  position: relative;
+  display: flex;
+  justify-content: center;
+}
+
 .player {
   width: 100%;
   max-height: 70vh;
   border-radius: 12px;
   background: #000;
+}
+
+.stage.vertical .player {
+  width: auto;
+  max-width: 100%;
+  height: 70vh;
+}
+
+.orientation {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(4px);
+  opacity: 0.75;
+  transition: opacity 0.15s ease;
+}
+
+.stage:hover .orientation,
+.orientation:focus-within {
+  opacity: 1;
+}
+
+.orientation button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 24px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.orientation button.active {
+  background: rgba(255, 255, 255, 0.22);
+  color: #fff;
+}
+
+.orientation svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+}
+
+.orientation button.active svg {
+  fill: currentColor;
 }
 
 .description {
@@ -143,11 +270,31 @@ const copyLink = async () => {
 }
 
 .meta {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 130px 130px;
+  display: flex;
+  flex-wrap: wrap;
   gap: 1.5rem;
-  align-items: start;
+  align-items: flex-start;
   padding-right: 1rem;
+}
+
+.col-sources {
+  flex: 1 1 240px;
+}
+
+.col-twitch,
+.col-date {
+  flex: 0 0 130px;
+}
+
+.value.link {
+  color: var(--accent-ink);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--line-strong);
+  align-self: flex-start;
+}
+
+.value.link:hover {
+  border-bottom-color: var(--accent);
 }
 
 .col {
@@ -225,20 +372,15 @@ const copyLink = async () => {
 
 @media (max-width: 640px) {
   .meta {
-    grid-template-columns: 1fr 1fr;
     gap: 1rem;
     padding-right: 0;
   }
   .col-sources {
-    grid-column: 1 / -1;
+    flex-basis: 100%;
   }
-  .col-added {
-    grid-column: 1;
-    grid-row: 2;
-  }
-  .col-stream {
-    grid-column: 2;
-    grid-row: 2;
+  .col-twitch,
+  .col-date {
+    flex: 1 1 auto;
   }
 }
 </style>

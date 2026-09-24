@@ -18,8 +18,15 @@ const envSchema = z.object({
   API_HASH: requiredString,
   TG_SESSION: requiredString,
   CLIPS_DIR: requiredString,
-  CHANNEL_NAME: requiredString,
+  TELEGRAM_CHANNEL: requiredString,
   YOUTUBE_API_KEY: requiredString,
+  YOUTUBE_CHANNEL: requiredString,
+  YT_DLP: z.preprocess(emptyToUndefined, z.string().trim().optional()),
+  SKIP_BACKFILL: z.preprocess(emptyToUndefined, z.coerce.boolean().optional()),
+  TWITCH_CLIENT_ID: requiredString,
+  TWITCH_CLIENT_SECRET: requiredString,
+  TWITCH_BROADCASTER: requiredString,
+  TWITCH_CLIPS_SINCE: z.iso.date(),
 });
 
 const validateConfig = () => {
@@ -56,6 +63,8 @@ export const initConfig = () => {
     clipsDir: path.resolve(env.CLIPS_DIR, 'videos'),
     thumbsDir: path.resolve(env.CLIPS_DIR, 'thumbnails'),
     dbPath: path.resolve(env.CLIPS_DIR, 'videos.db'),
+    twitchTokenPath: path.resolve(env.CLIPS_DIR, 'twitch-token.json'),
+    extraClipsPath: path.resolve(env.CLIPS_DIR, 'extra-clips.txt'),
   };
   validateWritableDir(paths.clipsDir);
   validateWritableDir(paths.thumbsDir);
@@ -64,8 +73,15 @@ export const initConfig = () => {
     apiId: env.API_ID,
     apiHash: env.API_HASH,
     tgSession: env.TG_SESSION,
-    channelName: env.CHANNEL_NAME,
+    telegramChannel: env.TELEGRAM_CHANNEL,
     youtubeApiKey: env.YOUTUBE_API_KEY,
+    youtubeChannel: env.YOUTUBE_CHANNEL,
+    ytDlp: env.YT_DLP ?? 'yt-dlp',
+    skipBackfill: env.SKIP_BACKFILL ?? false,
+    twitchClientId: env.TWITCH_CLIENT_ID,
+    twitchClientSecret: env.TWITCH_CLIENT_SECRET,
+    twitchBroadcaster: env.TWITCH_BROADCASTER,
+    twitchClipsSince: new Date(env.TWITCH_CLIPS_SINCE),
     ...paths,
   };
 };

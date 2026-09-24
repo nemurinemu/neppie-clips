@@ -16,5 +16,11 @@ module.exports = {
       script: 'dist/index.js',
       env: { NODE_ENV: 'production' },
     },
+    {
+      name: 'neppie-twitch',
+      cwd: path.join(root, 'apps/fetcher'),
+      script: 'dist/twitch/index.js',
+      env: { NODE_ENV: 'production' },
+    },
   ],
 };

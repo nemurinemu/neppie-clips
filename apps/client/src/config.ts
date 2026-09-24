@@ -8,4 +8,6 @@ export const config = {
   videosEndpoint: `${API_BASE}/videos`,
   thumbUrl: (mediaId: number) => `${MEDIA_BASE}/thumbnails/${mediaId}.webp`,
   videoUrl: (mediaId: number) => `${VIDEO_BASE}/videos/${mediaId}.mp4`,
+  verticalUrl: (mediaId: number) =>
+    `${VIDEO_BASE}/videos/${mediaId}_vertical.mp4`,
 };

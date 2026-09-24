@@ -24,6 +24,14 @@ export default defineConfig(({ mode }) => {
 
   return {
     plugins: [vue()],
+    build: {
+      rollupOptions: {
+        input: {
+          main: path.resolve(process.cwd(), 'index.html'),
+          admin: path.resolve(process.cwd(), 'admin.html'),
+        },
+      },
+    },
     define: {
       __PEEK_IMAGES__: JSON.stringify(
         publicFiles('peek', /\.(png|jpe?g|webp|gif|avif)$/i),

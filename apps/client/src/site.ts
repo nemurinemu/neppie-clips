@@ -10,12 +10,12 @@ export const site = {
   // Set to null to show the text title instead.
   bannerSrc: '/banner.webp' as string | null,
 
-  aboutHtml: `I love neppie!!! And I make a lot of clips with neppie. But how do you even find the clips?! You find them here.
+  aboutHtml: `I love neppie very much!!!!! And I make a lot of clips with neppie. But how do you even find the clips?! You find them here.
   <br><br>
-  This website features all clips that I've made, including those posted to neppie's discord server, my twitter, my youtube channel and neppie clips youtube channel. Sources and downloads provided.
-  New clips will appear here as soon as I post them anywhere else.
+  This website features all clips that I've ever made, including everything posted to neppie's discord server, my twitter, my youtube channel, neppie clips youtube channel, neppie's channel and all of my Twitch clips. Sources and downloads are provided for every clip! You can search and sort them too!! How cool is that huh!!!!
   <br>
-  Except for twitch clips!! You can find those on Katabasis clips website below!<br><br> 
+  New clips appear here as soon as I post them anywhere else.
+  <br><br> 
  `,
 
   links: {

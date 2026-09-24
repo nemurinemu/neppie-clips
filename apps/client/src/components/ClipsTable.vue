@@ -3,6 +3,7 @@ import { nextTick, watch } from 'vue';
 import type { Clip, SortDir, SortKey } from '../lib/clips';
 import { downloadName, downloadUrl, formatDate } from '../lib/format';
 import { smoothScrollTo } from '../lib/scroll';
+import PlatformBadge from './PlatformBadge.vue';
 import SourceLinks from './SourceLinks.vue';
 import VideoPanel from './VideoPanel.vue';
 
@@ -90,7 +91,10 @@ watch(
             @keydown.enter.prevent="emit('toggle', clip.shareId)"
             @keydown.space.prevent="emit('toggle', clip.shareId)"
           >
-            <td class="col-id">{{ clip.clipNumber }}</td>
+            <td class="col-id">
+              <span class="num">{{ clip.clipNumber }}</span>
+              <PlatformBadge :platform="clip.platform" />
+            </td>
             <td class="col-thumb">
               <span class="thumb">
                 <img
@@ -104,7 +108,9 @@ watch(
             <td class="col-desc">{{ clip.description || 'Untitled clip' }}</td>
             <td class="col-date col-addedAt">
               <span class="row-id-mobile">#{{ clip.clipNumber }} · </span
-              >{{ formatDate(clip.addedAt) }}
+              >{{ formatDate(clip.addedAt) }}<span class="row-id-mobile badge-mobile"
+                ><PlatformBadge :platform="clip.platform"
+              /></span>
             </td>
             <td class="col-date col-streamAt">{{ formatDate(clip.streamAt) }}</td>
             <td class="col-sources">
@@ -226,6 +232,19 @@ th.active {
   font-variant-numeric: tabular-nums;
 }
 
+.clip-row .col-id {
+  display: table-cell;
+}
+
+.clip-row .col-id .num {
+  display: block;
+}
+
+.clip-row .col-id .badge {
+  display: block;
+  margin: 4px auto 0;
+}
+
 .clips .col-id {
   padding-right: 0.35rem;
 }
@@ -337,6 +356,14 @@ th.active {
   border-bottom: 1px solid var(--line);
 }
 
+/* A colspan cell's min-content width can widen the columns it spans, so the
+   panel's contents (player, meta row) would nudge the table on every open. */
+.expand-row td > * {
+  width: 0;
+  min-width: 100%;
+  box-sizing: border-box;
+}
+
 .empty {
   padding: 2rem;
   text-align: center;
@@ -417,6 +444,10 @@ th.active {
 
   .row-id-mobile {
     display: inline;
+  }
+
+  .badge-mobile {
+    margin-left: 0.4rem;
   }
 
   .clip-row .col-dl {

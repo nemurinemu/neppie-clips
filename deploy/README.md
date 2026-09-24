@@ -11,7 +11,7 @@ and the media files (`/media/*`) straight from disk. Transport is rsync over SSH
    - `apps/api/.env.production` → `PORT=3200`, `CLIPS_DIR=<media dir>`,
      `WEB_INDEX=<WEB_ROOT>/index.html` (enables per-clip link previews)
    - `apps/fetcher/.env.production` → `API_ID`, `API_HASH`, `TG_SESSION`,
-     `CLIPS_DIR=<same media dir>`, `CHANNEL_NAME`, `YOUTUBE_API_KEY`
+     `CLIPS_DIR=<same media dir>`, `TELEGRAM_CHANNEL`, `YOUTUBE_API_KEY`
    Both `CLIPS_DIR` must be the same path (fetcher writes `videos.db`, api reads it).
    Only `.env.production` is pushed; other `.env*` files stay on your machine.
 4. nginx: copy `deploy/nginx/neppie-clips.conf` into `sites-available`, replace

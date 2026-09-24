@@ -1,5 +1,8 @@
 import path from 'node:path';
 
+export type Platform = 'telegram' | 'twitch';
+
+// Row shape as selected by the api; has_vertical comes back as 0/1.
 export interface Video {
   id: number;
   shareId: string;
@@ -10,6 +13,10 @@ export interface Video {
   height: string;
   groupedId: string | null;
   sizeBytes: number | null;
+  platform: Platform;
+  hasVertical: number;
+  verticalSizeBytes: number | null;
+  twitchUrl: string | null;
 }
 
 export interface Source {
@@ -30,4 +37,8 @@ export interface VideoResponse {
   height: string;
   sizeBytes: number | null;
   sources: Pick<Source, 'url' | 'youtubeTitle' | 'youtubePublishedAt'>[];
+  platform?: Platform;
+  hasVertical?: boolean;
+  verticalSizeBytes?: number | null;
+  twitchUrl?: string | null;
 }

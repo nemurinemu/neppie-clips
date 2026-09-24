@@ -62,7 +62,9 @@ deploy_api() {
 deploy_fetcher() {
   rsync_source
   remote_app fetcher "$PM2_FETCHER"
-  echo "✓ fetcher rebuilt and reloaded ($PM2_FETCHER)"
+  "$SSH_BIN" "$SSH_HOST" "$REMOTE_PRELUDE; cd '$REMOTE_ROOT' \
+    && pm2 startOrReload deploy/ecosystem.config.cjs --only neppie-twitch --update-env"
+  echo "✓ fetcher rebuilt and reloaded ($PM2_FETCHER + neppie-twitch)"
 }
 
 deploy_all() {

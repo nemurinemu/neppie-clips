@@ -149,3 +149,5 @@ scripts/deploy.env
 
 apps/client/public/*
 !apps/client/public/README.md
+
+docs/

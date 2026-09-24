@@ -5,7 +5,10 @@
   "main": "./dist/index.js",
   "scripts": {
     "create-session": "tsx src/scripts/create-session.ts",
+    "twitch-login": "tsx src/scripts/twitch-login.ts",
+    "twitch-dump": "tsx src/scripts/twitch-dump.ts",
     "dev": "nodemon --exec tsx src/index.ts",
+    "twitch": "tsx src/twitch/index.ts",
     "build": "rimraf dist && tsc -p tsconfig.build.json"
   },
   "keywords": [],

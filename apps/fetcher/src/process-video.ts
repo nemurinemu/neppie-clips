@@ -1,17 +1,18 @@
 import Database from 'better-sqlite3';
-import { execFile } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
-import { promisify } from 'node:util';
+import { randomBytes } from 'node:crypto';
 import { Api, TelegramClient } from 'teleproto';
-import { config } from './config';
+import { makeThumbnail, probeVideo, removeMedia, thumbPath, videoPath } from './media';
 import { parseCaption } from './parse-caption';
 import { extractYoutubeId, fetchYoutubeMetadata } from './youtube';
-import { randomBytes } from 'node:crypto';
 
 const generateShareId = () => randomBytes(6).toString('base64url');
 
-const execFileAsync = promisify(execFile);
+export const uniqueShareId = (db: Database.Database) => {
+  const exists = db.prepare('SELECT 1 FROM videos WHERE share_id = ?');
+  let id = generateShareId();
+  while (exists.get(id)) id = generateShareId();
+  return id;
+};
 
 export const processVideo = async (
   client: TelegramClient,
@@ -19,82 +20,55 @@ export const processVideo = async (
   caption: string,
   db: Database.Database,
 ) => {
-  const exists = db
-    .prepare('SELECT 1 FROM videos WHERE telegram_msg_id = ?')
-    .get(msg.id);
-
-  const videoPath = path.resolve(config.clipsDir, `${msg.id}.mp4`);
-
-  if (!exists) {
-    const thumbPath = path.resolve(config.thumbsDir, `${msg.id}.webp`);
-
-    await client.downloadMedia(msg, { outputFile: videoPath });
-    await execFileAsync('ffmpeg', [
-      '-y',
-      '-ss',
-      '00:00:01',
-      '-i',
-      videoPath,
-      '-frames:v',
-      '1',
-      '-update',
-      '1',
-      '-vf',
-      'scale=640:-2',
-      '-quality',
-      '80',
-      thumbPath,
-    ]);
-  }
-
   const { description, sources } = parseCaption(caption);
-  const sizeBytes = fs.existsSync(videoPath)
-    ? fs.statSync(videoPath).size
-    : null;
-  let width: number | undefined;
-  let height: number | undefined;
-  if (fs.existsSync(videoPath)) {
-    const { stdout } = await execFileAsync('ffprobe', [
-      '-v',
-      'error',
-      '-select_streams',
-      'v:0',
-      '-show_entries',
-      'stream=width,height',
-      '-of',
-      'csv=p=0:s=x',
-      videoPath,
-    ]);
-    const [w, h] = stdout.trim().split('x').map(Number);
-    width = Number.isFinite(w) ? w : undefined;
-    height = Number.isFinite(h) ? h : undefined;
+  const row = db
+    .prepare('SELECT id FROM videos WHERE telegram_msg_id = ?')
+    .get(msg.id) as { id: number } | undefined;
+
+  let id: number;
+  if (row) {
+    id = row.id;
+  } else {
+    // Insert first: the row id names the media files.
+    id = Number(
+      db
+        .prepare(
+          `INSERT INTO videos (telegram_msg_id, share_id, description, added_at, grouped_id)
+           VALUES (?, ?, ?, ?, ?)`,
+        )
+        .run(
+          msg.id,
+          uniqueShareId(db),
+          description,
+          msg.date,
+          msg.groupedId?.toString() ?? null,
+        ).lastInsertRowid,
+    );
+    // A delete arriving mid-download removes the row (and the partial file);
+    // that surfaces either as a missing row afterwards or as a failed step.
+    const stillWanted = () =>
+      !!db.prepare('SELECT 1 FROM videos WHERE id = ?').get(id);
+    try {
+      await client.downloadMedia(msg, { outputFile: videoPath(id) });
+      await makeThumbnail(videoPath(id), thumbPath(id));
+    } catch (err) {
+      const wanted = stillWanted();
+      removeMedia(id);
+      if (!wanted) {
+        console.log(`Video ${id} (msg ${msg.id}) deleted mid-download, discarded`);
+        return;
+      }
+      db.prepare('DELETE FROM videos WHERE id = ?').run(id);
+      throw err;
+    }
+    if (!stillWanted()) {
+      removeMedia(id);
+      console.log(`Video ${id} (msg ${msg.id}) deleted mid-download, discarded`);
+      return;
+    }
   }
-  const insertVideo = db.prepare(
-    `
-    INSERT INTO videos (telegram_msg_id, share_id, description, added_at, grouped_id, size_bytes, width, height)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `,
-  );
 
-  const updateVideo = db.prepare(
-    `
-    UPDATE videos SET description = ?, size_bytes = ?, width = ?, height = ?
-    WHERE telegram_msg_id = ?
-    `,
-  );
-
-  const deleteSources = db.prepare('DELETE FROM sources WHERE video_id = ?');
-
-  const insertSource = db.prepare(
-    'INSERT INTO sources (video_id, url, youtube_title, youtube_published_at) VALUES (?, ?, ?, ?)',
-  );
-
-  const shareIdExists = db.prepare('SELECT 1 FROM videos WHERE share_id = ?');
-  const uniqueShareId = () => {
-    let id = generateShareId();
-    while (shareIdExists.get(id)) id = generateShareId();
-    return id;
-  };
+  const { sizeBytes, width, height } = await probeVideo(videoPath(id));
 
   const ytIds = sources
     .map(extractYoutubeId)
@@ -102,34 +76,25 @@ export const processVideo = async (
   const ytMeta =
     ytIds.length > 0 ? await fetchYoutubeMetadata(ytIds) : new Map();
 
-  const tx = db.transaction(() => {
-    if (exists) {
-      updateVideo.run(description, sizeBytes, width, height, msg.id);
-    } else {
-      insertVideo.run(
-        msg.id,
-        uniqueShareId(),
-        description,
-        msg.date,
-        msg.groupedId?.toString() ?? null,
-        sizeBytes,
-        width,
-        height,
-      );
-    }
-    deleteSources.run(msg.id);
+  const updateVideo = db.prepare(
+    `UPDATE videos SET description = ?, size_bytes = ?, width = ?, height = ?,
+       updated_at = CASE WHEN ? THEN unixepoch() ELSE updated_at END
+     WHERE id = ?`,
+  );
+  const deleteSources = db.prepare('DELETE FROM sources WHERE video_id = ?');
+  const insertSource = db.prepare(
+    'INSERT INTO sources (video_id, url, youtube_title, youtube_published_at) VALUES (?, ?, ?, ?)',
+  );
+
+  db.transaction(() => {
+    updateVideo.run(description, sizeBytes, width, height, row ? 1 : 0, id);
+    deleteSources.run(id);
     for (const url of sources) {
       const ytId = extractYoutubeId(url);
       const meta = ytId ? ytMeta.get(ytId) : undefined;
-      insertSource.run(
-        msg.id,
-        url,
-        meta?.title ?? null,
-        meta?.publishedAt ?? null,
-      );
+      insertSource.run(id, url, meta?.title ?? null, meta?.publishedAt ?? null);
     }
-  });
-  tx();
+  })();
 
-  console.log(`Saved/updated video ${msg.id}: ${description}`);
+  console.log(`Saved/updated video ${id} (msg ${msg.id}): ${description}`);
 };

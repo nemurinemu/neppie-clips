@@ -1,26 +1,21 @@
 import Database from 'better-sqlite3';
-import { rmSync } from 'node:fs';
-import path from 'node:path';
-import { config } from './config';
+import { removeMedia } from './media';
 
 export const deleteVideos = (msgIds: number[], db: Database.Database) => {
-  const exists = db.prepare('SELECT 1 FROM videos WHERE telegram_msg_id = ?');
-  const remove = db.prepare('DELETE FROM videos WHERE telegram_msg_id = ?');
+  const find = db.prepare('SELECT id FROM videos WHERE telegram_msg_id = ?');
+  const remove = db.prepare('DELETE FROM videos WHERE id = ?');
 
   const removed: number[] = [];
-  const tx = db.transaction((ids: number[]) => {
-    for (const id of ids) {
-      if (!exists.get(id)) continue;
-      remove.run(id);
-      removed.push(id);
+  db.transaction(() => {
+    for (const msgId of msgIds) {
+      const row = find.get(msgId) as { id: number } | undefined;
+      if (!row) continue;
+      remove.run(row.id);
+      removed.push(row.id);
     }
-  });
-  tx(msgIds);
+  })();
 
-  for (const id of removed) {
-    rmSync(path.resolve(config.clipsDir, `${id}.mp4`), { force: true });
-    rmSync(path.resolve(config.thumbsDir, `${id}.webp`), { force: true });
-  }
+  for (const id of removed) removeMedia(id);
   if (removed.length) {
     console.log(`Deleted ${removed.length} video(s): ${removed.join(', ')}`);
   }
