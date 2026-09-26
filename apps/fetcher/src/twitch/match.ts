@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { videoPath } from '../media';
-import { alignClip, envelope, findIn, isCached, youtubeEnvelope, YoutubeDownloadError } from './align';
+import { alignClip, envelope, findIn, isCached, youtubeEnvelope, youtubePaused, YoutubeDownloadError } from './align';
 import { getVideos, getVodPositions } from './api';
 import { streamBefore, streamContaining, streamLength, YoutubeStream } from './youtube';
 
@@ -140,7 +140,7 @@ const matchVodClips = (db: Database.Database) => {
 // Last YouTube download success/failure, shown on the admin page so a
 // broken cookie file doesn't go unnoticed.
 const recordYoutube = (db: Database.Database, err?: unknown) => {
-  if (err !== undefined && !(err instanceof YoutubeDownloadError)) return;
+  if (err !== undefined && (!(err instanceof YoutubeDownloadError) || err.paused)) return;
   db.prepare(
     `INSERT INTO app_status (key, value, at) VALUES (?, ?, ?)
      ON CONFLICT(key) DO UPDATE SET value = excluded.value, at = excluded.at`,
@@ -441,6 +441,9 @@ export const matchSources = async (db: Database.Database) => {
 // One unit of alignment work: a stream if any is waiting, else a clip.
 // Returns false when there was nothing to do.
 export const alignNext = async (db: Database.Database) => {
+  // Cached envelopes would still work, but nothing is queued that is sure to
+  // be cached; simpler to wait the pause out.
+  if (youtubePaused()) return false;
   // Before alignStreams: it gives most streams their offset from the same
   // single download.
   if (await alignVodClips(db)) return true;

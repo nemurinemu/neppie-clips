@@ -91,7 +91,11 @@ export const correlate = (clip: Float32Array, seg: Float32Array): Correlation =>
 // file is always decoded. Lowest-bitrate audio is plenty for onsets, and it stays
 // compressed: ffmpeg decodes it straight into the envelope (a WAV of a whole
 // stream is gigabytes, which is more than /tmp on the VPS).
-export class YoutubeDownloadError extends Error {}
+export class YoutubeDownloadError extends Error {
+  constructor(message: string, readonly paused = false) {
+    super(message);
+  }
+}
 
 const downloadAudio = async (videoId: string, dir: string) => {
   await execFileAsync(
@@ -102,8 +106,10 @@ const downloadAudio = async (videoId: string, dir: string) => {
       '--no-playlist',
       // YouTube asks server IPs to sign in; cookies from a throwaway account.
       ...(fs.existsSync(config.youtubeCookiesPath) ? ['--cookies', config.youtubeCookiesPath] : []),
+      // Audio only when offered; with cookies YouTube sometimes offers only
+      // video, then the smallest one (ffmpeg reads just its audio).
       '-f',
-      'wa',
+      'wa/worst',
       '-o',
       path.join(dir, 'seg.%(ext)s'),
       `https://www.youtube.com/watch?v=${videoId}`,
@@ -111,7 +117,10 @@ const downloadAudio = async (videoId: string, dir: string) => {
     { maxBuffer: 16 * 1024 * 1024, timeout: 30 * 60 * 1000 },
   ).catch((err: { killed?: boolean; stderr?: string; message?: string }) => {
     const lines = (err.stderr ?? err.message ?? '').split('\n').map((l) => l.trim());
-    const reason = err.killed ? 'timed out after 30 minutes' : (lines.filter((l) => l.startsWith('ERROR')).at(-1) ?? lines.filter(Boolean).at(-1) ?? 'unknown error');
+    const last = lines.filter((l) => l.startsWith('ERROR')).at(-1) ?? lines.filter(Boolean).at(-1) ?? 'unknown error';
+    // ffmpeg reports a 403 on its own line, before its generic exit error.
+    const forbidden = lines.find((l) => /\b403\b/.test(l) && l !== last);
+    const reason = err.killed ? 'timed out after 30 minutes' : [last, forbidden].filter(Boolean).join(' / ');
     throw new YoutubeDownloadError(reason);
   });
   const file = fs.readdirSync(dir).find((f) => f.startsWith('seg.') && !f.endsWith('.part'));
@@ -119,18 +128,30 @@ const downloadAudio = async (videoId: string, dir: string) => {
   return path.join(dir, file);
 };
 
-// YouTube sometimes answers 403 and then works on the next try. A sign-in
-// demand won't pass on retry, so it fails straight away.
+// YouTube sometimes answers 403 and then works on the next try; only that
+// is retried. Any other failure pauses all downloads for a while, so a
+// YouTube-side problem costs one request per pause, not one per stream.
 const RETRY_DELAYS_MS = [30_000, 120_000];
+const PAUSE_MS = 12 * 3600_000;
+let pausedUntil = 0;
+export const youtubePaused = () => Date.now() < pausedUntil;
+
 const downloadAudioRetrying = async (videoId: string, dir: string) => {
+  if (Date.now() < pausedUntil) {
+    throw new YoutubeDownloadError(`paused until ${new Date(pausedUntil).toISOString()} after a failed download`, true);
+  }
   for (let attempt = 0; ; attempt++) {
     try {
       return await downloadAudio(videoId, dir);
     } catch (err) {
       const delay = RETRY_DELAYS_MS[attempt];
-      if (!(err instanceof YoutubeDownloadError) || /sign in|cookies/i.test(err.message) || delay === undefined) throw err;
-      console.log(`YouTube download of ${videoId} failed (${err.message}); retrying in ${delay / 1000}s`);
-      await new Promise((r) => setTimeout(r, delay));
+      if (err instanceof YoutubeDownloadError && /403|forbidden/i.test(err.message) && delay !== undefined) {
+        console.log(`YouTube download of ${videoId} failed (${err.message}); retrying in ${delay / 1000}s`);
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      pausedUntil = Date.now() + PAUSE_MS;
+      throw err;
     }
   }
 };

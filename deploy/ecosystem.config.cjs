@@ -20,7 +20,8 @@ module.exports = {
       name: 'neppie-twitch',
       cwd: path.join(root, 'apps/fetcher'),
       script: 'dist/twitch/index.js',
-      env: { NODE_ENV: 'production' },
+      // yt-dlp needs deno to solve YouTube's JS challenges.
+      env: { NODE_ENV: 'production', PATH: `${path.join(require('node:os').homedir(), '.deno/bin')}:${process.env.PATH}` },
     },
   ],
 };
