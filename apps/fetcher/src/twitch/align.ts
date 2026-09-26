@@ -11,9 +11,10 @@ const execFileAsync = promisify(execFile);
 const RATE = 4000;
 const HOP = RATE / 100;
 
-const envelope = (file: string): Promise<Float32Array> =>
+const envelope = (file: string, range?: { from: number; to: number } | null): Promise<Float32Array> =>
   new Promise((resolve, reject) => {
-    const ff = spawn('ffmpeg', ['-v', 'error', '-i', file, '-f', 's16le', '-ac', '1', '-ar', String(RATE), 'pipe:1']);
+    const cut = range ? ['-ss', String(range.from), '-t', String(range.to - range.from)] : [];
+    const ff = spawn('ffmpeg', ['-v', 'error', ...cut, '-i', file, '-f', 's16le', '-ac', '1', '-ar', String(RATE), 'pipe:1']);
     const rms: number[] = [];
     let acc = 0;
     let n = 0;
@@ -85,26 +86,34 @@ export const correlate = (clip: Float32Array, seg: Float32Array): Correlation =>
   return { lag: best / 100, peak, ratio: second > 0 ? peak / second : Infinity };
 };
 
-// Audio for [from, to] seconds of a YouTube video, cut precisely; the whole
-// video when no range is given. Lowest-bitrate audio is plenty for onsets,
-// and it stays compressed: ffmpeg decodes it straight into the envelope (a
-// WAV of a whole stream is gigabytes, which is more than /tmp on the VPS).
-const downloadAudio = async (videoId: string, range: { from: number; to: number } | null, dir: string) => {
+// A YouTube video's whole audio. Section downloads fail for server IPs
+// (YouTube serves them a format ffmpeg can't seek remotely), so ranges are
+// cut locally. Lowest-bitrate audio is plenty for onsets, and it stays
+// compressed: ffmpeg decodes it straight into the envelope (a WAV of a whole
+// stream is gigabytes, which is more than /tmp on the VPS).
+export class YoutubeDownloadError extends Error {}
+
+const downloadAudio = async (videoId: string, dir: string) => {
   await execFileAsync(
     config.ytDlp,
     [
       '-q',
       '--no-warnings',
       '--no-playlist',
+      // YouTube asks server IPs to sign in; cookies from a throwaway account.
+      ...(fs.existsSync(config.youtubeCookiesPath) ? ['--cookies', config.youtubeCookiesPath] : []),
       '-f',
       'wa',
-      ...(range ? ['--download-sections', `*${range.from}-${range.to}`, '--force-keyframes-at-cuts'] : []),
       '-o',
       path.join(dir, 'seg.%(ext)s'),
       `https://www.youtube.com/watch?v=${videoId}`,
     ],
-    { maxBuffer: 16 * 1024 * 1024 },
-  );
+    { maxBuffer: 16 * 1024 * 1024, timeout: 30 * 60 * 1000 },
+  ).catch((err: { killed?: boolean; stderr?: string; message?: string }) => {
+    const lines = (err.stderr ?? err.message ?? '').split('\n').map((l) => l.trim());
+    const reason = err.killed ? 'timed out after 30 minutes' : (lines.filter((l) => l.startsWith('ERROR')).at(-1) ?? lines.filter(Boolean).at(-1) ?? 'unknown error');
+    throw new YoutubeDownloadError(reason);
+  });
   const file = fs.readdirSync(dir).find((f) => f.startsWith('seg.'));
   if (!file) throw new Error('yt-dlp produced no file');
   return path.join(dir, file);
@@ -127,8 +136,8 @@ export const alignClip = async (
   const dir = fs.mkdtempSync(path.join(scratch, 'align-'));
   try {
     const r = range ? { from: Math.max(0, range.from), to: range.to } : null;
-    const seg = await downloadAudio(videoId, r, dir);
-    const [clipEnv, segEnv] = await Promise.all([envelope(clipFile), envelope(seg)]);
+    const seg = await downloadAudio(videoId, dir);
+    const [clipEnv, segEnv] = await Promise.all([envelope(clipFile), envelope(seg, r)]);
     const c = correlate(clipEnv, segEnv);
     return { ...c, seconds: (r?.from ?? 0) + c.lag };
   } finally {

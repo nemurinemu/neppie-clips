@@ -46,6 +46,12 @@ interface FailedStream {
   clipCount: number;
 }
 interface Overview {
+  youtube: {
+    lastOkAt: number | null;
+    lastError: { at: number; message: string | null } | null;
+    broken: boolean;
+    hasCookies: boolean;
+  };
   storage: { clipsBytes: number; diskFree: number; diskTotal: number };
   counts: { platform: string; n: number }[];
   unmatched: Unmatched[];
@@ -115,6 +121,8 @@ const act = async (key: string, path: string, body?: unknown) => {
 
 const date = (iso: string) => new Date(iso).toLocaleString('en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 const short = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' });
+const unix = (s: number) => date(new Date(s * 1000).toISOString());
+const cookieProblem = computed(() => /sign in|cookies|login|bot/i.test(data.value?.youtube.lastError?.message ?? ''));
 const siteLink = (shareId: string) => `/?video=${shareId}`;
 const pct = computed(() => (data.value ? Math.round((1 - data.value.storage.diskFree / data.value.storage.diskTotal) * 100) : 0));
 const count = (p: string) => data.value?.counts.find((c) => c.platform === p)?.n ?? 0;
@@ -146,6 +154,22 @@ onMounted(() => { if (auth.value) load(); });
     </form>
 
     <template v-if="data">
+      <section v-if="data.youtube.broken || !data.youtube.hasCookies" class="card alert">
+        <h2>YouTube downloads are failing</h2>
+        <p>Exact timestamps are paused; new clips get the usual ~53 s guess until this is fixed.</p>
+        <p v-if="!data.youtube.hasCookies">
+          There's no cookies file on the server (<code>clips/youtube-cookies.txt</code>).
+        </p>
+        <p v-else-if="cookieProblem">
+          YouTube rejected the cookies — they probably expired. Export new ones (incognito window → sign in →
+          youtube.com/robots.txt → Export → close the window) and replace <code>clips/youtube-cookies.txt</code> on the server.
+        </p>
+        <p v-if="data.youtube.lastError" class="muted small">
+          {{ unix(data.youtube.lastError.at) }}: {{ data.youtube.lastError.message }}
+          <template v-if="data.youtube.lastOkAt"> · last worked {{ unix(data.youtube.lastOkAt) }}</template>
+        </p>
+      </section>
+
       <section class="card storage">
         <div>
           <span class="key">Clips on disk</span>
@@ -260,6 +284,10 @@ onMounted(() => { if (auth.value) load(); });
 h2 { margin: 0 0 0.75rem; font-size: 1rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); }
 h2 .n { margin-left: 0.4rem; padding: 0.05rem 0.5rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); font-size: 0.85rem; }
 .error { color: #b00020; }
+.alert { border-left: 4px solid #d93025; background: color-mix(in srgb, #d93025 8%, var(--card)); }
+.alert h2 { color: #d93025; }
+.alert p { margin: 0.4rem 0 0; }
+.alert code { font-size: 0.85em; }
 .muted { color: var(--ink-faint); }
 .small { font-size: 0.85rem; }
 .storage { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }

@@ -65,6 +65,7 @@ export const initConfig = () => {
     dbPath: path.resolve(env.CLIPS_DIR, 'videos.db'),
     twitchTokenPath: path.resolve(env.CLIPS_DIR, 'twitch-token.json'),
     extraClipsPath: path.resolve(env.CLIPS_DIR, 'extra-clips.txt'),
+    youtubeCookiesPath: path.resolve(env.CLIPS_DIR, 'youtube-cookies.txt'),
   };
   validateWritableDir(paths.clipsDir);
   validateWritableDir(paths.thumbsDir);

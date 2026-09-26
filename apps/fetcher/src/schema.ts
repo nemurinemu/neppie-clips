@@ -129,6 +129,12 @@ export const applySchema = (db: Database.Database) => {
       fetched_at INTEGER
     );
 
+    CREATE TABLE IF NOT EXISTS app_status (
+      key TEXT PRIMARY KEY,
+      value TEXT,
+      at INTEGER
+    );
+
     CREATE INDEX IF NOT EXISTS idx_sources_video_id ON sources(video_id);
     CREATE INDEX IF NOT EXISTS idx_videos_grouped_id ON videos(grouped_id);
   `);

@@ -118,7 +118,24 @@ export const adminRouter = (): Router => {
       .prepare(`SELECT source_platform AS platform, COUNT(*) AS n FROM videos WHERE size_bytes IS NOT NULL GROUP BY source_platform`)
       .all();
 
+    // Written by the fetcher's matcher; absent until it has tried a download.
+    let status: { key: string; value: string | null; at: number }[] = [];
+    try {
+      status = db.prepare(`SELECT key, value, at FROM app_status WHERE key IN ('youtube_ok', 'youtube_error')`).all() as typeof status;
+    } catch {
+      /* table not created yet */
+    }
+    const ok = status.find((s) => s.key === 'youtube_ok');
+    const error = status.find((s) => s.key === 'youtube_error');
+    const cookies = path.resolve(path.dirname(config.dbPath), 'youtube-cookies.txt');
+
     res.json({
+      youtube: {
+        lastOkAt: ok?.at ?? null,
+        lastError: error ? { at: error.at, message: error.value } : null,
+        broken: !!error && error.at > (ok?.at ?? 0),
+        hasCookies: fs.existsSync(cookies),
+      },
       storage: { clipsBytes: bytes.b, diskFree: st.bavail * st.bsize, diskTotal: st.blocks * st.bsize },
       counts,
       unmatched: withSuggestions,

@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { videoPath } from '../media';
-import { alignClip } from './align';
+import { alignClip, YoutubeDownloadError } from './align';
 import { getVideos, getVodPositions } from './api';
 import { streamBefore, streamContaining, streamLength, YoutubeStream } from './youtube';
 
@@ -128,6 +128,16 @@ const matchVodClips = (db: Database.Database) => {
   return { matched, noStream };
 };
 
+// Last YouTube download success/failure, shown on the admin page so a
+// broken cookie file doesn't go unnoticed.
+const recordYoutube = (db: Database.Database, err?: unknown) => {
+  if (err !== undefined && !(err instanceof YoutubeDownloadError)) return;
+  db.prepare(
+    `INSERT INTO app_status (key, value, at) VALUES (?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET value = excluded.value, at = excluded.at`,
+  ).run(err ? 'youtube_error' : 'youtube_ok', err instanceof Error ? err.message : null, now());
+};
+
 const confident = (a: { peak: number; ratio: number }) => a.peak >= MIN_PEAK && a.ratio >= MIN_RATIO;
 
 const clampWindow = (stream: YoutubeStream, from: number, to: number) => {
@@ -171,6 +181,7 @@ const alignStreams = async (db: Database.Database, limit: number) => {
       try {
         if (!win) throw new Error('stream still live');
         const a = await alignClip(videoPath(clip.id), stream.id, win);
+        recordYoutube(db);
         tried.push(`clip ${clip.id}: peak ${a.peak.toFixed(2)} ratio ${a.ratio.toFixed(1)}`);
         if (confident(a)) {
           const offset = Math.round(raw - a.seconds);
@@ -181,6 +192,7 @@ const alignStreams = async (db: Database.Database, limit: number) => {
           break;
         }
       } catch (err) {
+        recordYoutube(db, err);
         console.error(`Aligning stream ${stream.id} failed:`, err instanceof Error ? err.message : err);
       }
     }
@@ -256,9 +268,11 @@ const alignClips = async (db: Database.Database, limit: number) => {
     for (const { stream, range } of candidates) {
       try {
         const a = await alignClip(videoPath(row.id), stream.id, range);
+        recordYoutube(db);
         tried.push(`${stream.id}${range ? '' : ' (whole)'}: peak ${a.peak.toFixed(2)} ratio ${a.ratio.toFixed(1)} at ${Math.round(a.seconds)}s`);
         if (confident(a)) hits.push({ stream, seconds: a.seconds, peak: a.peak, ratio: a.ratio });
       } catch (err) {
+        recordYoutube(db, err);
         console.error(`Aligning clip ${row.clip_id} on ${stream.id} failed:`, err instanceof Error ? err.message : err);
       }
     }
@@ -308,9 +322,33 @@ const learnMissingPositions = async (db: Database.Database) => {
   return found.length;
 };
 
+// A clip aligned by audio that also has a Twitch position pins its stream's
+// offset, the same as a pasted link does, so its siblings get exact times.
+const offsetsFromAlignedClips = (db: Database.Database) => {
+  const rows = db
+    .prepare(
+      `SELECT s.*, t.vod_offset, t.vod_created_at, src.url FROM youtube_streams s
+       JOIN sources src ON src.url LIKE '%v=' || s.id || '&%'
+       JOIN twitch_clips t ON t.video_id = src.video_id
+       WHERE s.offset_seconds IS NULL AND t.align_status = 'ok'
+         AND t.vod_offset IS NOT NULL AND t.vod_created_at IS NOT NULL
+       GROUP BY s.id`,
+    )
+    .all() as (YoutubeStream & { vod_offset: number; vod_created_at: string; url: string })[];
+  for (const r of rows) {
+    const t = Number(new URL(r.url).searchParams.get('t')?.replace(/s$/, ''));
+    if (!Number.isFinite(t)) continue;
+    const offset = Math.round(rawSeconds(r, r.vod_created_at, r.vod_offset) - t - LEAD);
+    db.prepare(`UPDATE youtube_streams SET offset_seconds = ?, align_status = 'ok', align_tried_at = ? WHERE id = ?`).run(offset, now(), r.id);
+    retimeStream(db, { ...r, offset_seconds: offset });
+    console.log(`Stream ${r.id} offset ${offset}s from an aligned clip`);
+  }
+};
+
 export const matchSources = async (db: Database.Database) => {
   await learnMissingPositions(db);
   const learned = await learnVodStarts(db);
+  offsetsFromAlignedClips(db);
   return { learned, ...matchVodClips(db) };
 };
 
