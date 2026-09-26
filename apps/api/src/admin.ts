@@ -10,10 +10,15 @@ import { config } from './config';
 const now = () => Math.floor(Date.now() / 1000);
 // Must match the fetcher's matcher (twitch/match.ts).
 const LEAD = 2;
-const DEFAULT_OFFSET = 34;
+const DEFAULT_OFFSET = 53;
 
-const fallbackOffset = (db: Database.Database) =>
-  (db.prepare('SELECT MAX(offset_seconds) m FROM youtube_streams').get() as { m: number | null }).m ?? DEFAULT_OFFSET;
+// Typical offset across aligned streams: the restream delay is near-constant
+// (52–56 s on most streams), so the median lands within a few seconds when a
+// stream can't be aligned. Outliers (special streams) don't skew it.
+const fallbackOffset = (db: Database.Database) => {
+  const offsets = (db.prepare(`SELECT offset_seconds o FROM youtube_streams WHERE align_status = 'ok' AND offset_seconds IS NOT NULL ORDER BY o`).all() as { o: number }[]).map((r) => r.o);
+  return offsets.length ? offsets[Math.floor(offsets.length / 2)]! : DEFAULT_OFFSET;
+};
 
 const mediaFiles = (id: number) => [
   path.resolve(config.clipsDir, `${id}.mp4`),
@@ -151,8 +156,8 @@ export const adminRouter = (): Router => {
       res.status(404).json({ error: 'not a twitch clip' });
       return;
     }
-    const stream = db.prepare('SELECT title, published_at, started_at, offset_seconds FROM youtube_streams WHERE id = ?').get(videoId) as
-      | { title: string; published_at: string; started_at: string; offset_seconds: number | null }
+    const stream = db.prepare('SELECT title, started_at FROM youtube_streams WHERE id = ?').get(videoId) as
+      | { title: string; started_at: string }
       | undefined;
     const clip = db.prepare('SELECT vod_offset, vod_created_at FROM twitch_clips WHERE video_id = ?').get(id) as {
       vod_offset: number | null;
@@ -165,23 +170,35 @@ export const adminRouter = (): Router => {
         id,
         `https://www.youtube.com/watch?v=${videoId}&t=${seconds}s`,
         stream?.title ?? null,
-        stream?.published_at ?? null,
+        stream?.started_at ?? null,
       );
       db.prepare(`UPDATE twitch_clips SET align_status = 'manual', assigned_stream = NULL WHERE video_id = ?`).run(id);
       db.prepare('UPDATE videos SET needs_review = 0, updated_at = ? WHERE id = ?').run(now(), id);
 
       // A correct link for a clip with an exact Twitch position pins the
-      // stream's offset; the poller re-times its other clips within minutes.
-      if (stream && stream.offset_seconds === null && clip.vod_offset !== null && clip.vod_created_at !== null) {
+      // stream's offset, and every other clip from the same Twitch VOD is
+      // re-timed from it right away.
+      if (stream && clip.vod_offset !== null && clip.vod_created_at !== null) {
         const drift = (Date.parse(stream.started_at) - Date.parse(clip.vod_created_at)) / 1000;
         const offset = Math.round(clip.vod_offset - drift - seconds - LEAD);
         db.prepare(`UPDATE youtube_streams SET offset_seconds = ?, align_status = 'manual', align_tried_at = ? WHERE id = ?`).run(offset, now(), videoId);
-        retimed = db
+        const siblings = db
           .prepare(
-            `DELETE FROM sources WHERE url LIKE '%v=' || ? || '&%' AND video_id != ?
-               AND video_id IN (SELECT video_id FROM twitch_clips WHERE vod_offset IS NOT NULL)`,
+            `SELECT video_id, vod_offset FROM twitch_clips
+             WHERE vod_created_at = ? AND vod_offset IS NOT NULL AND video_id != ?
+               AND COALESCE(align_status, '') NOT IN ('manual', 'dismissed')`,
           )
-          .run(videoId, id).changes;
+          .all(clip.vod_created_at, id) as { video_id: number; vod_offset: number }[];
+        const del = db.prepare(`DELETE FROM sources WHERE video_id = ? AND url LIKE '%youtube.com/watch%'`);
+        const ins = db.prepare('INSERT INTO sources (video_id, url, youtube_title, youtube_published_at) VALUES (?, ?, ?, ?)');
+        const flag = db.prepare('UPDATE videos SET needs_review = 0, updated_at = ? WHERE id = ?');
+        for (const s of siblings) {
+          const t = Math.max(0, Math.round(s.vod_offset - drift - offset - LEAD));
+          del.run(s.video_id);
+          ins.run(s.video_id, `https://www.youtube.com/watch?v=${videoId}&t=${t}s`, stream.title, stream.started_at);
+          flag.run(now(), s.video_id);
+        }
+        retimed = siblings.length;
       }
     })();
     res.json({ ok: true, videoId, seconds, retimed });

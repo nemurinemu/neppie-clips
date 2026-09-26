@@ -29,7 +29,7 @@ export const fetchYoutubeMetadata = async (
 
   for (let i = 0; i < ids.length; i += 50) {
     const batch = ids.slice(i, i + 50);
-    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet&id=${batch.join(',')}&key=${config.youtubeApiKey}`;
+    const url = `https://www.googleapis.com/youtube/v3/videos?part=snippet,liveStreamingDetails&id=${batch.join(',')}&key=${config.youtubeApiKey}`;
     const res = await fetch(url);
     if (!res.ok) {
       console.error(`Youtube API error: ${res.status} ${await res.text()}`);
@@ -40,7 +40,7 @@ export const fetchYoutubeMetadata = async (
       result.set(item.id, {
         id: item.id,
         title: item.snippet.title,
-        publishedAt: item.snippet.publishedAt,
+        publishedAt: item.liveStreamingDetails?.actualStartTime ?? item.snippet.publishedAt,
       });
     }
   }

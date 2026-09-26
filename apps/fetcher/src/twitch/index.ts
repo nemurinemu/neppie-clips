@@ -9,7 +9,7 @@ import { alignNext, matchSources } from './match';
 import { processTwitchClip } from './process-clip';
 import { refreshStreams } from './youtube';
 
-const POLL_MS = 5 * 60 * 1000;
+const POLL_MS = 3 * 60 * 1000;
 const YTDLP_UPDATE_MS = 24 * 60 * 60 * 1000;
 const ALIGN_IDLE_MS = 60 * 1000;
 const LATE_SEEN_DAYS = 30;

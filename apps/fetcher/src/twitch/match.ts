@@ -1,12 +1,11 @@
 import Database from 'better-sqlite3';
 import { videoPath } from '../media';
 import { alignClip } from './align';
-import { getVideos } from './api';
+import { getVideos, getVodPositions } from './api';
 import { streamBefore, streamContaining, streamLength, YoutubeStream } from './youtube';
 
-// Largest per-stream offset observed before any alignment existed. Used
-// when a stream isn't aligned yet; biased early on purpose.
-const DEFAULT_OFFSET = 34;
+// Used only until at least one stream has been aligned.
+const DEFAULT_OFFSET = 53;
 const LEAD = 2;
 // Twitch VOD and YouTube stream starts agreed within ±2s on every stream
 // checked; allow much more and still never cross into another stream.
@@ -35,9 +34,13 @@ interface ClipRow {
 
 const now = () => Math.floor(Date.now() / 1000);
 
-const fallbackOffset = (db: Database.Database) =>
-  (db.prepare('SELECT MAX(offset_seconds) m FROM youtube_streams').get() as { m: number | null }).m ??
-  DEFAULT_OFFSET;
+// Typical offset across aligned streams: the restream delay is near-constant
+// (52–56 s on most streams), so the median lands within a few seconds when a
+// stream can't be aligned. Outliers (special streams) don't skew it.
+const fallbackOffset = (db: Database.Database) => {
+  const offsets = (db.prepare(`SELECT offset_seconds o FROM youtube_streams WHERE align_status = 'ok' AND offset_seconds IS NOT NULL ORDER BY o`).all() as { o: number }[]).map((r) => r.o);
+  return offsets.length ? offsets[Math.floor(offsets.length / 2)]! : DEFAULT_OFFSET;
+};
 
 export const youtubeUrl = (streamId: string, seconds: number) =>
   `https://www.youtube.com/watch?v=${streamId}&t=${Math.max(0, seconds)}s`;
@@ -74,7 +77,7 @@ const writeSource = (
       videoId,
       youtubeUrl(stream.id, Math.round(seconds)),
       stream.title,
-      stream.published_at,
+      stream.started_at,
     );
     db.prepare('UPDATE videos SET needs_review = ? WHERE id = ?').run(approximate ? 1 : 0, videoId);
   })();
@@ -275,7 +278,38 @@ const alignClips = async (db: Database.Database, limit: number) => {
   return { ok, failed };
 };
 
+// Clips without a VOD position whose VOD may still exist (Twitch keeps them
+// 60 days): ask Twitch's website API, which has it when the official one
+// doesn't. Anything found goes through the exact VOD path.
+const learnMissingPositions = async (db: Database.Database) => {
+  const since = new Date(Date.now() - 60 * 86_400_000).toISOString();
+  const missing = db
+    .prepare(
+      `SELECT t.clip_id FROM twitch_clips t JOIN videos v ON v.id = t.video_id
+       WHERE t.vod_offset IS NULL AND t.created_at >= ?
+         AND COALESCE(t.align_status, '') NOT IN ('manual', 'dismissed')
+         AND NOT EXISTS (SELECT 1 FROM sources s WHERE s.video_id = v.id AND s.url LIKE '%youtube.com/watch%')`,
+    )
+    .all(since) as { clip_id: string }[];
+  if (!missing.length) return 0;
+  let found: Awaited<ReturnType<typeof getVodPositions>> = [];
+  try {
+    found = await getVodPositions(missing.map((m) => m.clip_id));
+  } catch (err) {
+    console.error('VOD position lookup failed:', err instanceof Error ? err.message : err);
+    return 0;
+  }
+  const set = db.prepare(
+    `UPDATE twitch_clips SET vod_id = ?, vod_offset = ?, vod_created_at = ?,
+       assigned_stream = NULL, align_status = NULL, align_tried_at = NULL
+     WHERE clip_id = ?`,
+  );
+  for (const f of found) set.run(f.vodId, f.vodOffset, f.vodCreatedAt, f.slug);
+  return found.length;
+};
+
 export const matchSources = async (db: Database.Database) => {
+  await learnMissingPositions(db);
   const learned = await learnVodStarts(db);
   return { learned, ...matchVodClips(db) };
 };

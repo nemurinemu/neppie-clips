@@ -166,3 +166,39 @@ export const getClipDownloads = async (
   }
   return out;
 };
+
+export interface VodPosition {
+  slug: string;
+  vodId: string;
+  vodOffset: number;
+  vodCreatedAt: string;
+}
+
+// The official Get Clips omits the VOD link for clips fetched by id (and
+// for clips the listing hides). Twitch's own website API has it. Unofficial:
+// if it ever breaks, clips just fall back to audio alignment.
+export const getVodPositions = async (slugs: string[]): Promise<VodPosition[]> => {
+  const out: VodPosition[] = [];
+  for (const batch of chunk(slugs, 20)) {
+    const res = await fetch('https://gql.twitch.tv/gql', {
+      method: 'POST',
+      headers: { 'Client-Id': 'kimne78kx3ncx6brgo4mv6wki5h1ko', 'Content-Type': 'application/json' },
+      body: JSON.stringify(
+        batch.map((slug) => ({
+          query: `{ clip(slug: ${JSON.stringify(slug)}) { videoOffsetSeconds video { id createdAt } } }`,
+        })),
+      ),
+    });
+    if (!res.ok) throw new Error(`Twitch gql ${res.status}`);
+    const data = (await res.json()) as {
+      data?: { clip?: { videoOffsetSeconds: number | null; video: { id: string; createdAt: string } | null } | null };
+    }[];
+    data.forEach((d, i) => {
+      const c = d.data?.clip;
+      if (c?.video && c.videoOffsetSeconds !== null) {
+        out.push({ slug: batch[i]!, vodId: c.video.id, vodOffset: c.videoOffsetSeconds, vodCreatedAt: c.video.createdAt });
+      }
+    });
+  }
+  return out;
+};
