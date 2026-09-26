@@ -203,7 +203,7 @@ export const adminRouter = (): Router => {
           .prepare(
             `SELECT video_id, vod_offset FROM twitch_clips
              WHERE vod_created_at = ? AND vod_offset IS NOT NULL AND video_id != ?
-               AND COALESCE(align_status, '') NOT IN ('manual', 'dismissed')`,
+               AND COALESCE(align_status, '') NOT IN ('ok', 'manual', 'dismissed')`,
           )
           .all(clip.vod_created_at, id) as { video_id: number; vod_offset: number }[];
         const del = db.prepare(`DELETE FROM sources WHERE video_id = ? AND url LIKE '%youtube.com/watch%'`);

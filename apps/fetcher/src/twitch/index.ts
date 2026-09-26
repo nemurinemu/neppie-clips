@@ -4,7 +4,7 @@ import { config } from '../config';
 import { removeMedia } from '../media';
 import { applySchema } from '../schema';
 import { getClipsById, listClips, resolveIds, TwitchClip, TwitchIds } from './api';
-import { updateYtDlp } from './align';
+import { pruneAudioCache, updateYtDlp } from './align';
 import { alignNext, matchSources } from './match';
 import { processTwitchClip } from './process-clip';
 import { refreshStreams } from './youtube';
@@ -168,7 +168,10 @@ const main = async () => {
     return;
   }
   setInterval(run, POLL_MS);
-  setInterval(updateYtDlp, YTDLP_UPDATE_MS);
+  setInterval(() => {
+    void updateYtDlp();
+    pruneAudioCache();
+  }, YTDLP_UPDATE_MS);
 
   // Alignment runs continuously and independently of the poll: each unit
   // is a minute or more of yt-dlp/ffmpeg, so it never blocks new clips.

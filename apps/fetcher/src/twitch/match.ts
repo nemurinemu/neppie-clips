@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import { videoPath } from '../media';
-import { alignClip, YoutubeDownloadError } from './align';
+import { alignClip, envelope, findIn, isCached, youtubeEnvelope, YoutubeDownloadError } from './align';
 import { getVideos, getVodPositions } from './api';
 import { streamBefore, streamContaining, streamLength, YoutubeStream } from './youtube';
 
@@ -15,6 +15,15 @@ const START_TOLERANCE_MS = 5 * 60 * 1000;
 const MIN_PEAK = 0.5;
 const MIN_RATIO = 2;
 const RETRY_AFTER_S = 24 * 3600;
+// Twitch's clip positions are off by up to ~45 s, differently per clip, so
+// each clip is also matched by audio — only within this many seconds of
+// where its link already points, so a match can never move it further.
+const SEARCH_S = 120;
+// Wait until clipping on a stream has settled, so a burst of clips (e.g.
+// clipping from a VOD) shares one audio download.
+const SETTLE_S = 30 * 60;
+// Short clips carry fewer onsets; they need a clearly stronger match.
+const SHORT_CLIP_S = 15;
 // A VOD-less clip created this long after a stream ended is assumed to be
 // from that stream's VOD and gets a whole-stream scan; later than that it
 // could be from any stream and goes to the admin page instead.
@@ -139,6 +148,8 @@ const recordYoutube = (db: Database.Database, err?: unknown) => {
 };
 
 const confident = (a: { peak: number; ratio: number }) => a.peak >= MIN_PEAK && a.ratio >= MIN_RATIO;
+const confidentFor = (a: { peak: number; ratio: number }, duration: number) =>
+  duration < SHORT_CLIP_S ? a.peak >= 0.65 && a.ratio >= 2.5 : confident(a);
 
 const clampWindow = (stream: YoutubeStream, from: number, to: number) => {
   const len = streamLength(stream);
@@ -180,8 +191,9 @@ const alignStreams = async (db: Database.Database, limit: number) => {
       const win = clampWindow(stream, raw - 90, raw + 30);
       try {
         if (!win) throw new Error('stream still live');
+        const fresh = !isCached(stream.id);
         const a = await alignClip(videoPath(clip.id), stream.id, win);
-        recordYoutube(db);
+        if (fresh) recordYoutube(db);
         tried.push(`clip ${clip.id}: peak ${a.peak.toFixed(2)} ratio ${a.ratio.toFixed(1)}`);
         if (confident(a)) {
           const offset = Math.round(raw - a.seconds);
@@ -211,12 +223,85 @@ const retimeStream = (db: Database.Database, stream: YoutubeStream) => {
     .prepare(
       `SELECT t.video_id AS id, t.vod_offset, t.vod_created_at FROM twitch_clips t
        JOIN sources src ON src.video_id = t.video_id
-       WHERE src.url LIKE '%v=' || ? || '&%' AND t.vod_offset IS NOT NULL AND t.vod_created_at IS NOT NULL`,
+       WHERE src.url LIKE '%v=' || ? || '&%' AND t.vod_offset IS NOT NULL AND t.vod_created_at IS NOT NULL
+         AND COALESCE(t.align_status, '') NOT IN ('ok', 'manual', 'dismissed')`,
     )
     .all(stream.id) as { id: number; vod_offset: number; vod_created_at: string }[];
   for (const r of rows) {
     writeSource(db, r.id, stream, rawSeconds(stream, r.vod_created_at, r.vod_offset) - stream.offset_seconds! - LEAD, false);
   }
+};
+
+// Every clip with a Twitch position on a finished stream gets one audio
+// check against a single download of the stream. A confident match makes
+// its link exact; otherwise it keeps the estimate ('estimate'). The stream's
+// offset, if still unknown, becomes the median of the matched clips.
+const alignVodClips = async (db: Database.Database) => {
+  const cutoff = now() - RETRY_AFTER_S;
+  const pending = `
+    FROM twitch_clips t JOIN sources src ON src.video_id = t.video_id
+    WHERE src.url LIKE '%v=' || ? || '&%' AND t.vod_offset IS NOT NULL AND t.vod_created_at IS NOT NULL
+      AND t.align_status IS NULL AND (t.align_tried_at IS NULL OR t.align_tried_at < ?)`;
+  const settled = new Date(Date.now() - SETTLE_S * 1000).toISOString();
+  const stream = (
+    db.prepare('SELECT * FROM youtube_streams WHERE ended_at IS NOT NULL ORDER BY started_at DESC').all() as YoutubeStream[]
+  ).find(
+    (st) =>
+      db.prepare(`SELECT 1 ${pending}`).get(st.id, cutoff) &&
+      !db.prepare(`SELECT 1 ${pending} AND t.created_at > ?`).get(st.id, cutoff, settled),
+  );
+  if (!stream) return false;
+  const clips = db
+    .prepare(`SELECT t.video_id AS id, t.vod_offset, t.vod_created_at, t.duration, src.url ${pending}`)
+    .all(stream.id, cutoff) as { id: number; vod_offset: number; vod_created_at: string; duration: number; url: string }[];
+
+  let env: Float32Array;
+  try {
+    const fresh = !isCached(stream.id);
+    env = await youtubeEnvelope(stream.id);
+    if (fresh) recordYoutube(db);
+  } catch (err) {
+    recordYoutube(db, err);
+    console.error(`Stream ${stream.id} audio download failed:`, err instanceof Error ? err.message : err);
+    const tried = db.prepare('UPDATE twitch_clips SET align_tried_at = ? WHERE video_id = ?');
+    for (const c of clips) tried.run(now(), c.id);
+    return true;
+  }
+
+  const mark = db.prepare(`UPDATE twitch_clips SET align_status = ?, align_tried_at = ? WHERE video_id = ? AND align_status IS NULL`);
+  const offsets: number[] = [];
+  let matched = 0;
+  for (const c of clips) {
+    const current = Number(new URL(c.url).searchParams.get('t')?.replace(/s$/, ''));
+    const range = Number.isFinite(current) ? clampWindow(stream, current + LEAD - SEARCH_S, current + LEAD + SEARCH_S) : null;
+    let status = 'estimate';
+    try {
+      if (!range) throw new Error('no link time');
+      const a = findIn(await envelope(videoPath(c.id)), env, range);
+      const still = db.prepare('SELECT align_status FROM twitch_clips WHERE video_id = ?').get(c.id) as { align_status: string | null } | undefined;
+      if (confidentFor(a, c.duration) && still && still.align_status === null) {
+        writeSource(db, c.id, stream, a.seconds - LEAD, false);
+        offsets.push(rawSeconds(stream, c.vod_created_at, c.vod_offset) - a.seconds);
+        status = 'ok';
+        matched++;
+        console.log(`Clip ${c.id} matched: moved ${Math.round(a.seconds - LEAD - current)}s (peak ${a.peak.toFixed(2)}, ratio ${a.ratio.toFixed(1)})`);
+      } else {
+        console.log(`Clip ${c.id} kept estimate (peak ${a.peak.toFixed(2)}, ratio ${a.ratio.toFixed(1)}, ${Math.round(c.duration)}s)`);
+      }
+    } catch (err) {
+      console.error(`Clip ${c.id} audio check failed:`, err instanceof Error ? err.message : err);
+    }
+    mark.run(status, now(), c.id);
+  }
+
+  if (stream.offset_seconds === null && offsets.length) {
+    offsets.sort((a, b) => a - b);
+    const offset = Math.round(offsets[Math.floor(offsets.length / 2)]!);
+    db.prepare(`UPDATE youtube_streams SET offset_seconds = ?, align_status = 'ok', align_tried_at = ? WHERE id = ?`).run(offset, now(), stream.id);
+    retimeStream(db, { ...stream, offset_seconds: offset });
+  }
+  console.log(`Stream ${stream.id}: ${matched}/${clips.length} clips matched by audio`);
+  return true;
 };
 
 // Clips without a Twitch position: creation time only nominates candidates;
@@ -267,8 +352,9 @@ const alignClips = async (db: Database.Database, limit: number) => {
     const tried: string[] = [];
     for (const { stream, range } of candidates) {
       try {
+        const fresh = !isCached(stream.id);
         const a = await alignClip(videoPath(row.id), stream.id, range);
-        recordYoutube(db);
+        if (fresh) recordYoutube(db);
         tried.push(`${stream.id}${range ? '' : ' (whole)'}: peak ${a.peak.toFixed(2)} ratio ${a.ratio.toFixed(1)} at ${Math.round(a.seconds)}s`);
         if (confident(a)) hits.push({ stream, seconds: a.seconds, peak: a.peak, ratio: a.ratio });
       } catch (err) {
@@ -355,6 +441,9 @@ export const matchSources = async (db: Database.Database) => {
 // One unit of alignment work: a stream if any is waiting, else a clip.
 // Returns false when there was nothing to do.
 export const alignNext = async (db: Database.Database) => {
+  // Before alignStreams: it gives most streams their offset from the same
+  // single download.
+  if (await alignVodClips(db)) return true;
   const streams = await alignStreams(db, 1);
   if (streams.ok + streams.failed > 0) return true;
   const clips = await alignClips(db, 1);

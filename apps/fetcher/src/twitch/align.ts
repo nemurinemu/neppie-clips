@@ -11,10 +11,9 @@ const execFileAsync = promisify(execFile);
 const RATE = 4000;
 const HOP = RATE / 100;
 
-const envelope = (file: string, range?: { from: number; to: number } | null): Promise<Float32Array> =>
+export const envelope = (file: string): Promise<Float32Array> =>
   new Promise((resolve, reject) => {
-    const cut = range ? ['-ss', String(range.from), '-t', String(range.to - range.from)] : [];
-    const ff = spawn('ffmpeg', ['-v', 'error', ...cut, '-i', file, '-f', 's16le', '-ac', '1', '-ar', String(RATE), 'pipe:1']);
+    const ff = spawn('ffmpeg', ['-v', 'error', '-i', file, '-f', 's16le', '-ac', '1', '-ar', String(RATE), 'pipe:1']);
     const rms: number[] = [];
     let acc = 0;
     let n = 0;
@@ -87,8 +86,9 @@ export const correlate = (clip: Float32Array, seg: Float32Array): Correlation =>
 };
 
 // A YouTube video's whole audio. Section downloads fail for server IPs
-// (YouTube serves them a format ffmpeg can't seek remotely), so ranges are
-// cut locally. Lowest-bitrate audio is plenty for onsets, and it stays
+// (YouTube serves them a format ffmpeg can't seek remotely), and seeking
+// into it locally lands tens of seconds off late in a stream, so the whole
+// file is always decoded. Lowest-bitrate audio is plenty for onsets, and it stays
 // compressed: ffmpeg decodes it straight into the envelope (a WAV of a whole
 // stream is gigabytes, which is more than /tmp on the VPS).
 export class YoutubeDownloadError extends Error {}
@@ -114,9 +114,25 @@ const downloadAudio = async (videoId: string, dir: string) => {
     const reason = err.killed ? 'timed out after 30 minutes' : (lines.filter((l) => l.startsWith('ERROR')).at(-1) ?? lines.filter(Boolean).at(-1) ?? 'unknown error');
     throw new YoutubeDownloadError(reason);
   });
-  const file = fs.readdirSync(dir).find((f) => f.startsWith('seg.'));
+  const file = fs.readdirSync(dir).find((f) => f.startsWith('seg.') && !f.endsWith('.part'));
   if (!file) throw new Error('yt-dlp produced no file');
   return path.join(dir, file);
+};
+
+// YouTube sometimes answers 403 and then works on the next try. A sign-in
+// demand won't pass on retry, so it fails straight away.
+const RETRY_DELAYS_MS = [30_000, 120_000];
+const downloadAudioRetrying = async (videoId: string, dir: string) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await downloadAudio(videoId, dir);
+    } catch (err) {
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (!(err instanceof YoutubeDownloadError) || /sign in|cookies/i.test(err.message) || delay === undefined) throw err;
+      console.log(`YouTube download of ${videoId} failed (${err.message}); retrying in ${delay / 1000}s`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
 };
 
 export interface Aligned extends Correlation {
@@ -130,19 +146,63 @@ export const alignClip = async (
   videoId: string,
   range: { from: number; to: number } | null,
 ): Promise<Aligned> => {
+  const [clipEnv, videoEnv] = await Promise.all([envelope(clipFile), youtubeEnvelope(videoId)]);
+  if (range) return findIn(clipEnv, videoEnv, range);
+  const c = correlate(clipEnv, videoEnv);
+  return { ...c, seconds: c.lag };
+};
+
+// A whole YouTube video's envelope. Each video is downloaded once: the
+// envelope (~1.4 MB per hour, the audio itself is deleted) is kept on disk
+// and reused for every later clip, so YouTube is asked as rarely as possible.
+const cacheDir = () => path.join(config.clipsDir, '..', 'audio-cache');
+const CACHE_KEEP_MS = 60 * 86_400_000;
+
+const cachePath = (videoId: string) => path.join(cacheDir(), `${videoId}.f32`);
+export const isCached = (videoId: string) => fs.existsSync(cachePath(videoId));
+
+export const youtubeEnvelope = async (videoId: string): Promise<Float32Array> => {
+  fs.mkdirSync(cacheDir(), { recursive: true });
+  const cached = cachePath(videoId);
+  if (fs.existsSync(cached)) {
+    const buf = fs.readFileSync(cached);
+    const t = new Date();
+    fs.utimesSync(cached, t, t);
+    return new Float32Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength));
+  }
   // Scratch space on the clips disk, not /tmp (small on the VPS).
   const scratch = path.join(config.clipsDir, '..', 'tmp');
   fs.mkdirSync(scratch, { recursive: true });
   const dir = fs.mkdtempSync(path.join(scratch, 'align-'));
   try {
-    const r = range ? { from: Math.max(0, range.from), to: range.to } : null;
-    const seg = await downloadAudio(videoId, dir);
-    const [clipEnv, segEnv] = await Promise.all([envelope(clipFile), envelope(seg, r)]);
-    const c = correlate(clipEnv, segEnv);
-    return { ...c, seconds: (r?.from ?? 0) + c.lag };
+    const env = await envelope(await downloadAudioRetrying(videoId, dir));
+    fs.writeFileSync(`${cached}.tmp`, Buffer.from(env.buffer, env.byteOffset, env.byteLength));
+    fs.renameSync(`${cached}.tmp`, cached);
+    return env;
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+};
+
+// Envelopes unused for 60 days: the Twitch VOD is gone by then, so new clips
+// from that stream are unlikely.
+export const pruneAudioCache = () => {
+  if (!fs.existsSync(cacheDir())) return;
+  for (const f of fs.readdirSync(cacheDir())) {
+    const p = path.join(cacheDir(), f);
+    if (Date.now() - fs.statSync(p).mtimeMs > CACHE_KEEP_MS) fs.rmSync(p, { force: true });
+  }
+};
+
+// Where does a clip occur within [from, to] of a whole-video envelope?
+export const findIn = (clipEnv: Float32Array, videoEnv: Float32Array, range: { from: number; to: number }): Aligned => {
+  const from = Math.max(0, Math.round(range.from));
+  const seg = videoEnv.slice(from * 100, Math.round(range.to) * 100);
+  // Centered on the window, as envelope() does for a downloaded section.
+  const mean = seg.reduce((a, b) => a + b, 0) / (seg.length || 1);
+  for (let i = 0; i < seg.length; i++) seg[i]! -= mean;
+  const c = correlate(clipEnv, seg);
+  return { ...c, seconds: from + c.lag };
 };
 
 export const updateYtDlp = async () => {
