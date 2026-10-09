@@ -17,6 +17,7 @@ export interface Video {
   hasVertical: number;
   verticalSizeBytes: number | null;
   twitchUrl: string | null;
+  updatedAt: number | null;
 }
 
 export interface Source {
@@ -41,4 +42,5 @@ export interface VideoResponse {
   hasVertical?: boolean;
   verticalSizeBytes?: number | null;
   twitchUrl?: string | null;
+  updatedAt?: number | null;
 }

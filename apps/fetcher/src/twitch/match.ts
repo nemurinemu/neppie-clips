@@ -19,9 +19,8 @@ const RETRY_AFTER_S = 24 * 3600;
 // each clip is also matched by audio — only within this many seconds of
 // where its link already points, so a match can never move it further.
 const SEARCH_S = 120;
-// Wait until clipping on a stream has settled, so a burst of clips (e.g.
-// clipping from a VOD) shares one audio download.
-const SETTLE_S = 30 * 60;
+// Wait until clipping on a stream has settled, so a burst of clips is checked together.
+const SETTLE_S = 5 * 60;
 // Short clips carry fewer onsets; they need a clearly stronger match.
 const SHORT_CLIP_S = 15;
 // A VOD-less clip created this long after a stream ended is assumed to be
@@ -224,7 +223,7 @@ const retimeStream = (db: Database.Database, stream: YoutubeStream) => {
       `SELECT t.video_id AS id, t.vod_offset, t.vod_created_at FROM twitch_clips t
        JOIN sources src ON src.video_id = t.video_id
        WHERE src.url LIKE '%v=' || ? || '&%' AND t.vod_offset IS NOT NULL AND t.vod_created_at IS NOT NULL
-         AND COALESCE(t.align_status, '') NOT IN ('ok', 'manual', 'dismissed')`,
+         AND COALESCE(t.align_status, '') NOT IN ('ok', 'unsure', 'manual', 'dismissed')`,
     )
     .all(stream.id) as { id: number; vod_offset: number; vod_created_at: string }[];
   for (const r of rows) {
@@ -234,8 +233,9 @@ const retimeStream = (db: Database.Database, stream: YoutubeStream) => {
 
 // Every clip with a Twitch position on a finished stream gets one audio
 // check against a single download of the stream. A confident match makes
-// its link exact; otherwise it keeps the estimate ('estimate'). The stream's
-// offset, if still unknown, becomes the median of the matched clips.
+// its link exact; otherwise the clip goes to the admin page to be checked
+// ('unsure'), pointing at the best spot found if there was a plausible one.
+// The stream's offset, if still unknown, becomes the median of the matched clips.
 const alignVodClips = async (db: Database.Database) => {
   const cutoff = now() - RETRY_AFTER_S;
   const pending = `
@@ -269,28 +269,34 @@ const alignVodClips = async (db: Database.Database) => {
   }
 
   const mark = db.prepare(`UPDATE twitch_clips SET align_status = ?, align_tried_at = ? WHERE video_id = ? AND align_status IS NULL`);
+  const flagReview = db.prepare('UPDATE videos SET needs_review = 1 WHERE id = ?');
   const offsets: number[] = [];
   let matched = 0;
   for (const c of clips) {
     const current = Number(new URL(c.url).searchParams.get('t')?.replace(/s$/, ''));
     const range = Number.isFinite(current) ? clampWindow(stream, current + LEAD - SEARCH_S, current + LEAD + SEARCH_S) : null;
-    let status = 'estimate';
+    let status = 'unsure';
     try {
       if (!range) throw new Error('no link time');
       const a = findIn(await envelope(videoPath(c.id)), env, range);
       const still = db.prepare('SELECT align_status FROM twitch_clips WHERE video_id = ?').get(c.id) as { align_status: string | null } | undefined;
-      if (confidentFor(a, c.duration) && still && still.align_status === null) {
+      if (!still || still.align_status !== null) continue;
+      if (confidentFor(a, c.duration)) {
         writeSource(db, c.id, stream, a.seconds - LEAD, false);
         offsets.push(rawSeconds(stream, c.vod_created_at, c.vod_offset) - a.seconds);
         status = 'ok';
         matched++;
         console.log(`Clip ${c.id} matched: moved ${Math.round(a.seconds - LEAD - current)}s (peak ${a.peak.toFixed(2)}, ratio ${a.ratio.toFixed(1)})`);
+      } else if (a.peak >= MIN_PEAK) {
+        writeSource(db, c.id, stream, a.seconds - LEAD, true);
+        console.log(`Clip ${c.id} unsure, best guess moved ${Math.round(a.seconds - LEAD - current)}s (peak ${a.peak.toFixed(2)}, ratio ${a.ratio.toFixed(1)}, ${Math.round(c.duration)}s)`);
       } else {
-        console.log(`Clip ${c.id} kept estimate (peak ${a.peak.toFixed(2)}, ratio ${a.ratio.toFixed(1)}, ${Math.round(c.duration)}s)`);
+        console.log(`Clip ${c.id} unsure, kept estimate (peak ${a.peak.toFixed(2)}, ratio ${a.ratio.toFixed(1)}, ${Math.round(c.duration)}s)`);
       }
     } catch (err) {
       console.error(`Clip ${c.id} audio check failed:`, err instanceof Error ? err.message : err);
     }
+    if (status === 'unsure') flagReview.run(c.id);
     mark.run(status, now(), c.id);
   }
 

@@ -1,5 +1,6 @@
 import { URL } from 'node:url';
 import { config } from './config';
+import { vodStreamDates } from './vod-dates';
 
 export const extractYoutubeId = (url: string): string | null => {
   try {
@@ -40,7 +41,7 @@ export const fetchYoutubeMetadata = async (
       result.set(item.id, {
         id: item.id,
         title: item.snippet.title,
-        publishedAt: item.liveStreamingDetails?.actualStartTime ?? item.snippet.publishedAt,
+        publishedAt: vodStreamDates[item.id] ?? item.liveStreamingDetails?.actualStartTime ?? item.snippet.publishedAt,
       });
     }
   }

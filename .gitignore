@@ -151,3 +151,6 @@ apps/client/public/*
 !apps/client/public/README.md
 
 docs/
+
+# vod mapping input
+/vods.tsv

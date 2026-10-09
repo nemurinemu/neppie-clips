@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, watch } from 'vue';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Clip, SortDir, SortKey } from '../lib/clips';
 import { downloadName, downloadUrl, formatDate } from '../lib/format';
 import { smoothScrollTo } from '../lib/scroll';
@@ -25,6 +25,50 @@ const dataColumns: { key: SortKey; label: string }[] = [
   { key: 'streamAt', label: 'Stream date' },
 ];
 
+const root = ref<HTMLElement | null>(null);
+const sentinel = ref<HTMLElement | null>(null);
+
+// Rows are built in pages as the end of the list comes near, and never removed.
+const PAGE = 100;
+const PRELOAD_PX = 1500;
+const shown = ref(PAGE);
+const rows = computed(() => props.clips.slice(0, shown.value));
+
+const nearEnd = () => {
+  const el = sentinel.value;
+  if (!el || el.offsetParent === null) return false;
+  return el.getBoundingClientRect().top < window.innerHeight + PRELOAD_PX;
+};
+
+const growWhileNearEnd = async () => {
+  while (shown.value < props.clips.length && nearEnd()) {
+    shown.value += PAGE;
+    await nextTick();
+  }
+};
+
+// A new search starts over from the first page; re-sorting keeps what's built so the page doesn't jump.
+watch(
+  () => props.clips,
+  async (next, prev) => {
+    if (next.length !== prev.length) shown.value = PAGE;
+    await nextTick();
+    await growWhileNearEnd();
+  },
+);
+
+let observer: IntersectionObserver | null = null;
+onMounted(() => {
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries.some((e) => e.isIntersecting)) void growWhileNearEnd();
+    },
+    { rootMargin: `0px 0px ${PRELOAD_PX}px 0px` },
+  );
+  if (sentinel.value) observer.observe(sentinel.value);
+});
+onUnmounted(() => observer?.disconnect());
+
 const arrow = (key: SortKey) =>
   props.sortKey === key ? (props.sortDir === 'asc' ? '▲' : '▼') : '';
 
@@ -39,10 +83,12 @@ watch(
   () => props.expandedId,
   async (id) => {
     if (id === null) return;
+    const index = props.clips.findIndex((c) => c.shareId === id);
+    if (index >= shown.value) shown.value = index + PAGE;
     await nextTick();
-    const el = document.querySelector<HTMLElement>(`[data-clip="${id}"]`);
+    const el = root.value?.querySelector<HTMLElement>(`[data-clip="${id}"]`);
     if (!el) return;
-    const thead = document.querySelector<HTMLElement>('.clips thead');
+    const thead = root.value?.querySelector<HTMLElement>('.clips thead');
     const offset = (thead?.offsetHeight ?? 48) + 16;
     smoothScrollTo(el.getBoundingClientRect().top + window.scrollY - offset, 320);
   },
@@ -50,7 +96,7 @@ watch(
 </script>
 
 <template>
-  <div class="table-wrap card">
+  <div ref="root" class="table-wrap card">
     <table class="clips">
       <thead>
         <tr>
@@ -79,7 +125,7 @@ watch(
       </thead>
 
       <tbody>
-        <template v-for="clip in clips" :key="clip.shareId">
+        <template v-for="clip in rows" :key="clip.shareId">
           <tr
             class="clip-row"
             :class="{ open: expandedId === clip.shareId }"
@@ -148,6 +194,7 @@ watch(
       </tbody>
     </table>
 
+    <div ref="sentinel" aria-hidden="true"></div>
     <p v-if="!clips.length" class="empty">No clips match your search.</p>
   </div>
 </template>

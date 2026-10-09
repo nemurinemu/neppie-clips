@@ -42,7 +42,7 @@ export const downloadUrl = (
   id: number,
   description: string,
 ): string =>
-  `${videoUrl}?name=${encodeURIComponent(downloadName(id, description))}`;
+  `${videoUrl}${videoUrl.includes('?') ? '&' : '?'}name=${encodeURIComponent(downloadName(id, description))}`;
 
 export const formatSize = (bytes: number | null): string =>
   bytes == null ? '—' : `${(bytes / 1024 / 1024).toFixed(1)} MB`;

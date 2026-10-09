@@ -67,10 +67,21 @@ export const adminRouter = (): Router => {
                (SELECT url FROM sources s WHERE s.video_id = v.id AND s.url LIKE '%youtube.com/watch%') AS youtubeUrl
         FROM videos v JOIN twitch_clips t ON t.video_id = v.id
         LEFT JOIN youtube_streams ys ON ys.id = t.assigned_stream
-        WHERE v.needs_review = 1
+        WHERE v.needs_review = 1 AND COALESCE(t.align_status, '') != 'unsure'
         ORDER BY t.created_at DESC
       `)
       .all() as { id: number; createdAt: string }[];
+    // The stream is known but the audio check couldn't confirm the time.
+    const unsure = db
+      .prepare(`
+        SELECT v.id, v.share_id AS shareId, v.description, t.url AS twitchUrl, t.created_at AS createdAt, t.duration,
+               (SELECT url FROM sources s WHERE s.video_id = v.id AND s.url LIKE '%youtube.com/watch%') AS youtubeUrl,
+               (SELECT youtube_title FROM sources s WHERE s.video_id = v.id AND s.url LIKE '%youtube.com/watch%') AS streamTitle
+        FROM videos v JOIN twitch_clips t ON t.video_id = v.id
+        WHERE v.needs_review = 1 AND t.align_status = 'unsure'
+        ORDER BY t.created_at DESC
+      `)
+      .all();
     // Alignment order: assigned clips first, then by id — mirror it so the
     // page can show a real queue position.
     const queue = (db
@@ -139,6 +150,7 @@ export const adminRouter = (): Router => {
       storage: { clipsBytes: bytes.b, diskFree: st.bavail * st.bsize, diskTotal: st.blocks * st.bsize },
       counts,
       unmatched: withSuggestions,
+      unsure,
       lateSeen,
       failedStreams,
     });
@@ -173,8 +185,8 @@ export const adminRouter = (): Router => {
       res.status(404).json({ error: 'not a twitch clip' });
       return;
     }
-    const stream = db.prepare('SELECT title, started_at FROM youtube_streams WHERE id = ?').get(videoId) as
-      | { title: string; started_at: string }
+    const stream = db.prepare('SELECT title, started_at, align_status FROM youtube_streams WHERE id = ?').get(videoId) as
+      | { title: string; started_at: string; align_status: string | null }
       | undefined;
     const clip = db.prepare('SELECT vod_offset, vod_created_at FROM twitch_clips WHERE video_id = ?').get(id) as {
       vod_offset: number | null;
@@ -192,10 +204,11 @@ export const adminRouter = (): Router => {
       db.prepare(`UPDATE twitch_clips SET align_status = 'manual', assigned_stream = NULL WHERE video_id = ?`).run(id);
       db.prepare('UPDATE videos SET needs_review = 0, updated_at = ? WHERE id = ?').run(now(), id);
 
-      // A correct link for a clip with an exact Twitch position pins the
-      // stream's offset, and every other clip from the same Twitch VOD is
-      // re-timed from it right away.
-      if (stream && clip.vod_offset !== null && clip.vod_created_at !== null) {
+      // For a stream whose offset audio couldn't find, a correct link pins it
+      // and every other clip from the same Twitch VOD is re-timed right away.
+      // An audio-found offset is better than one clip's Twitch position
+      // (off by up to ~90 s), so then only this clip changes.
+      if (stream && stream.align_status !== 'ok' && clip.vod_offset !== null && clip.vod_created_at !== null) {
         const drift = (Date.parse(stream.started_at) - Date.parse(clip.vod_created_at)) / 1000;
         const offset = Math.round(clip.vod_offset - drift - seconds - LEAD);
         db.prepare(`UPDATE youtube_streams SET offset_seconds = ?, align_status = 'manual', align_tried_at = ? WHERE id = ?`).run(offset, now(), videoId);
@@ -203,7 +216,7 @@ export const adminRouter = (): Router => {
           .prepare(
             `SELECT video_id, vod_offset FROM twitch_clips
              WHERE vod_created_at = ? AND vod_offset IS NOT NULL AND video_id != ?
-               AND COALESCE(align_status, '') NOT IN ('ok', 'manual', 'dismissed')`,
+               AND COALESCE(align_status, '') NOT IN ('ok', 'unsure', 'manual', 'dismissed')`,
           )
           .all(clip.vod_created_at, id) as { video_id: number; vod_offset: number }[];
         const del = db.prepare(`DELETE FROM sources WHERE video_id = ? AND url LIKE '%youtube.com/watch%'`);
@@ -219,6 +232,21 @@ export const adminRouter = (): Router => {
       }
     })();
     res.json({ ok: true, videoId, seconds, retimed });
+  });
+
+  // The current link's time is right as it is.
+  r.post('/clips/:id/confirm', (req, res) => {
+    const id = Number(req.params.id);
+    const done = db.transaction(() => {
+      const changed = db.prepare(`UPDATE twitch_clips SET align_status = 'manual' WHERE video_id = ?`).run(id).changes;
+      db.prepare('UPDATE videos SET needs_review = 0, updated_at = ? WHERE id = ?').run(now(), id);
+      return changed;
+    })();
+    if (!done) {
+      res.status(404).json({ error: 'not a twitch clip' });
+      return;
+    }
+    res.json({ ok: true });
   });
 
   // No YouTube source for this one; optionally say why in the description.

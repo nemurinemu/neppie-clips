@@ -32,7 +32,8 @@ const videosStmt = db.prepare(`
     v.source_platform as platform,
     v.has_vertical as hasVertical,
     v.vertical_size_bytes as verticalSizeBytes,
-    t.url as twitchUrl
+    t.url as twitchUrl,
+    v.updated_at as updatedAt
   FROM videos v
   LEFT JOIN twitch_clips t ON t.video_id = v.id
   WHERE v.size_bytes IS NOT NULL

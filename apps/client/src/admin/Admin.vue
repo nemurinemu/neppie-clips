@@ -29,6 +29,16 @@ interface Unmatched {
   queuePosition: number | null;
   suggestions: Stream[];
 }
+interface Unsure {
+  id: number;
+  shareId: string;
+  description: string;
+  twitchUrl: string;
+  createdAt: string;
+  duration: number;
+  youtubeUrl: string | null;
+  streamTitle: string | null;
+}
 interface LateSeen {
   clipId: string;
   twitchUrl: string;
@@ -55,6 +65,7 @@ interface Overview {
   storage: { clipsBytes: number; diskFree: number; diskTotal: number };
   counts: { platform: string; n: number }[];
   unmatched: Unmatched[];
+  unsure: Unsure[];
   lateSeen: LateSeen[];
   failedStreams: FailedStream[];
 }
@@ -224,6 +235,33 @@ onMounted(() => { if (auth.value) load(); });
       </section>
 
       <section class="card">
+        <h2>Time not confirmed <span class="n">{{ data.unsure.length }}</span></h2>
+        <p class="muted" v-if="!data.unsure.length">Every clip's time was confirmed by audio.</p>
+        <p class="muted small" v-else>The stream is right, but the audio check couldn't be sure of the moment. Open the guess: keep it if it lands on the clip, otherwise paste the right link.</p>
+        <article v-for="c in data.unsure" :key="c.id" class="row">
+          <img :src="config.thumbUrl(c.id)" alt="" />
+          <div class="body">
+            <div class="title">
+              <a :href="siteLink(c.shareId)" target="_blank">{{ c.description }}</a>
+              <span class="muted">clipped {{ date(c.createdAt) }} · {{ Math.round(c.duration) }}s ·
+                <a :href="c.twitchUrl" target="_blank">twitch</a>
+                <template v-if="c.streamTitle"> · {{ c.streamTitle }}</template>
+              </span>
+            </div>
+            <div class="controls">
+              <a v-if="c.youtubeUrl" class="btn soft" :href="c.youtubeUrl" target="_blank">open guess ↗</a>
+              <button class="btn primary" :disabled="busy === `confirm-${c.id}`" @click="act(`confirm-${c.id}`, `/clips/${c.id}/confirm`)">Time is right</button>
+              <button class="link" :class="{ on: open[c.id] === 'link' }" @click="open[c.id] = open[c.id] === 'link' ? undefined : 'link'">paste link</button>
+            </div>
+            <div class="controls" v-if="open[c.id] === 'link'">
+              <input v-model="link[c.id]" placeholder="https://youtu.be/…?t=1234 or youtube.com/watch?v=…&t=…" @keydown.enter="act(`source-${c.id}`, `/clips/${c.id}/source`, { url: link[c.id] })" />
+              <button class="btn soft" :disabled="!link[c.id] || busy === `source-${c.id}`" @click="act(`source-${c.id}`, `/clips/${c.id}/source`, { url: link[c.id] })">Save</button>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <section class="card">
         <h2>Appeared late — yours? <span class="n">{{ data.lateSeen.length }}</span></h2>
         <p class="muted" v-if="!data.lateSeen.length">Nothing to check.</p>
         <article v-for="c in data.lateSeen" :key="c.clipId" class="row">
@@ -313,6 +351,7 @@ input { flex: 1 1 200px; }
 .btn:disabled { opacity: 0.5; cursor: default; }
 .btn.primary { background: var(--accent); color: #fff; }
 .btn.soft { background: var(--accent-soft); color: var(--accent-ink); }
+a.btn { display: inline-flex; align-items: center; text-decoration: none; }
 .btn.ghost { background: transparent; border-color: var(--line-strong); color: var(--ink-soft); }
 @media (max-width: 600px) { .row { flex-direction: column; } .row img { width: 100%; } }
 </style>

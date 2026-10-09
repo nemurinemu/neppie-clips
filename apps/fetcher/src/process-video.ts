@@ -14,6 +14,29 @@ export const uniqueShareId = (db: Database.Database) => {
   return id;
 };
 
+// Telegram occasionally times out on a file and then serves it fine later.
+const RETRY_DELAYS_MS = [30_000, 120_000, 600_000];
+
+const downloadWithRetry = async (
+  client: TelegramClient,
+  msg: Api.Message,
+  id: number,
+  stillWanted: () => boolean,
+) => {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await client.downloadMedia(msg, { outputFile: videoPath(id) });
+      return;
+    } catch (err) {
+      const delay = RETRY_DELAYS_MS[attempt];
+      if (delay === undefined || !stillWanted()) throw err;
+      console.log(`Download of msg ${msg.id} failed (${err instanceof Error ? err.message : err}); retrying in ${delay / 1000}s`);
+      removeMedia(id);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+};
+
 export const processVideo = async (
   client: TelegramClient,
   msg: Api.Message,
@@ -49,7 +72,7 @@ export const processVideo = async (
     const stillWanted = () =>
       !!db.prepare('SELECT 1 FROM videos WHERE id = ?').get(id);
     try {
-      await client.downloadMedia(msg, { outputFile: videoPath(id) });
+      await downloadWithRetry(client, msg, id, stillWanted);
       await makeThumbnail(videoPath(id), thumbPath(id));
     } catch (err) {
       const wanted = stillWanted();

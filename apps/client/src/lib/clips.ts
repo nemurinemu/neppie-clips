@@ -22,14 +22,27 @@ export interface Clip {
   videoUrl: string;
   verticalUrl: string | null;
   verticalSizeBytes: number | null;
+  era: Era;
   platform: 'telegram' | 'twitch';
   twitchUrl: string | null;
   sources: ClipSource[];
   search: string;
 }
 
+export type Era = 'pre' | 'post';
 export type SortKey = 'clipNumber' | 'description' | 'addedAt' | 'streamAt';
 export type SortDir = 'asc' | 'desc';
+
+// Streams before this belong to the pre-3.0 era.
+const ERA_START = Date.UTC(2025, 4, 1);
+
+// Clips without a source can carry the stream date in the description, e.g. 2024-08-24.
+const descriptionDate = (text: string): Date | null => {
+  const m = /\b(\d{4})-(\d{2})-(\d{2})\b/.exec(text);
+  if (!m) return null;
+  const d = new Date(`${m[0]}T12:00:00Z`);
+  return Number.isNaN(d.getTime()) ? null : d;
+};
 
 const toClip = (v: VideoResponse): Clip => {
   const sources: ClipSource[] = v.sources.map((s) => ({
@@ -42,7 +55,8 @@ const toClip = (v: VideoResponse): Clip => {
   const streamAt = sources
     .map((s) => s.publishedAt)
     .filter((d): d is Date => d !== null)
-    .sort((a, b) => a.getTime() - b.getTime())[0];
+    .sort((a, b) => a.getTime() - b.getTime())[0] ??
+    descriptionDate(v.description ?? '');
 
   return {
     mediaId: v.id,
@@ -51,10 +65,11 @@ const toClip = (v: VideoResponse): Clip => {
     description: v.description ?? '',
     addedAt: parseDate(v.addedAt),
     streamAt: streamAt ?? null,
+    era: streamAt && streamAt.getTime() < ERA_START ? 'pre' : 'post',
     sizeBytes: v.sizeBytes,
-    thumbUrl: config.thumbUrl(v.id),
-    videoUrl: config.videoUrl(v.id),
-    verticalUrl: v.hasVertical ? config.verticalUrl(v.id) : null,
+    thumbUrl: config.thumbUrl(v.id, v.updatedAt),
+    videoUrl: config.videoUrl(v.id, v.updatedAt),
+    verticalUrl: v.hasVertical ? config.verticalUrl(v.id, v.updatedAt) : null,
     verticalSizeBytes: v.verticalSizeBytes ?? null,
     platform: v.platform ?? 'telegram',
     twitchUrl: v.twitchUrl ?? null,
@@ -73,6 +88,7 @@ export const useClips = () => {
   const error = ref<string | null>(null);
 
   const query = ref('');
+  const era = ref<Era>('post');
   const sortKey = ref<SortKey>('clipNumber');
   const sortDir = ref<SortDir>('desc');
 
@@ -100,22 +116,25 @@ export const useClips = () => {
     }
   };
 
-  const visible = computed<Clip[]>(() => {
+  const byEra = computed<Record<Era, Clip[]>>(() => {
     const q = query.value.trim().toLowerCase();
-    const filtered = q
-      ? clips.value.filter((c) => c.search.includes(q))
-      : clips.value.slice();
+    const lists: Record<Era, Clip[]> = { pre: [], post: [] };
+    for (const c of clips.value) {
+      if (!q || c.search.includes(q)) lists[c.era].push(c);
+    }
 
     const dir = sortDir.value === 'asc' ? 1 : -1;
     const key = sortKey.value;
-    filtered.sort((a, b) => {
+    const compare = (a: Clip, b: Clip) => {
       if (key === 'clipNumber') return (a.clipNumber - b.clipNumber) * dir;
       if (key === 'description') {
         return a.description.localeCompare(b.description) * dir;
       }
       return (time(a[key]) - time(b[key])) * dir;
-    });
-    return filtered;
+    };
+    lists.pre.sort(compare);
+    lists.post.sort(compare);
+    return lists;
   });
 
   return {
@@ -123,9 +142,10 @@ export const useClips = () => {
     loading,
     error,
     query,
+    era,
+    byEra,
     sortKey,
     sortDir,
-    visible,
     load,
     setSort,
   };

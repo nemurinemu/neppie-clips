@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from 'vue';
-import { useClips, type SortDir, type SortKey } from './lib/clips';
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useClips, type Era, type SortDir, type SortKey } from './lib/clips';
 import { smoothScrollTo } from './lib/scroll';
 import { randomPeek } from './lib/peek';
 import { usePeekPress } from './lib/peekPress';
@@ -10,8 +10,31 @@ import ClipsTable from './components/ClipsTable.vue';
 import SidePeekers from './components/SidePeekers.vue';
 import BackToTop from './components/BackToTop.vue';
 
-const { loading, error, query, sortKey, sortDir, visible, load, setSort } =
-  useClips();
+const {
+  clips,
+  loading,
+  error,
+  query,
+  era,
+  byEra,
+  sortKey,
+  sortDir,
+  load,
+  setSort,
+} = useClips();
+
+const total = computed(() => byEra.value.pre.length + byEra.value.post.length);
+
+const eraTabs = [
+  { era: 'post', label: 'POST-3.0' },
+  { era: 'pre', label: 'PRE-3.0' },
+] as const;
+
+// Each era's table is built on first visit and then only hidden, so switching back is instant.
+const rendered = ref<Record<Era, boolean>>({ pre: false, post: true });
+watch(era, (e) => {
+  rendered.value[e] = true;
+});
 
 const expandedId = ref<string | null>(null);
 const searchBar = ref<InstanceType<typeof SearchBar> | null>(null);
@@ -31,7 +54,7 @@ const toggle = (id: string) => {
   expandedId.value = expandedId.value === id ? null : id;
 };
 
-watch([query, sortKey, sortDir], () => {
+watch([query, era, sortKey, sortDir], () => {
   expandedId.value = null;
 });
 
@@ -71,9 +94,11 @@ onMounted(async () => {
   window.addEventListener('popstate', onPopState);
   window.addEventListener('keydown', onKeydown);
   await load();
-  const target = readUrl();
-  if (target !== null && visible.value.some((c) => c.shareId === target)) {
-    expandedId.value = target;
+  const target = clips.value.find((c) => c.shareId === readUrl());
+  if (target) {
+    era.value = target.era;
+    await nextTick();
+    expandedId.value = target.shareId;
   }
 });
 
@@ -108,7 +133,7 @@ onUnmounted(() => {
         <option value="clipNumber:desc"># descending</option>
       </select>
       <span v-if="!loading && !error" class="count">
-        {{ visible.length }} clip{{ visible.length === 1 ? '' : 's' }}
+        {{ total }} clip{{ total === 1 ? '' : 's' }}
         {{ query.trim() ? 'found' : 'total' }}
       </span>
     </div>
@@ -116,15 +141,36 @@ onUnmounted(() => {
     <p v-if="loading" class="status">Loading clips…</p>
     <p v-else-if="error" class="status error">Couldn’t load clips: {{ error }}</p>
 
-    <ClipsTable
-      v-else
-      :clips="visible"
-      :expanded-id="expandedId"
-      :sort-key="sortKey"
-      :sort-dir="sortDir"
-      @toggle="toggle"
-      @sort="setSort"
-    />
+    <div v-else class="era-list" :class="`era-${era}`">
+      <div class="era-tabs" role="tablist">
+        <button
+          v-for="tab in eraTabs"
+          :key="tab.era"
+          type="button"
+          role="tab"
+          class="era-tab"
+          :class="[`era-${tab.era}`, { active: era === tab.era }]"
+          :aria-selected="era === tab.era"
+          @click="era = tab.era"
+        >
+          {{ tab.label }}
+          <span class="era-count">({{ byEra[tab.era].length }})</span>
+        </button>
+      </div>
+
+      <template v-for="tab in eraTabs" :key="tab.era">
+        <ClipsTable
+          v-if="rendered[tab.era]"
+          v-show="era === tab.era"
+          :clips="byEra[tab.era]"
+          :expanded-id="expandedId"
+          :sort-key="sortKey"
+          :sort-dir="sortDir"
+          @toggle="toggle"
+          @sort="setSort"
+        />
+      </template>
+    </div>
 
     <p v-if="!loading && !error" class="credit">
       made with love by nemu ·
@@ -244,6 +290,53 @@ onUnmounted(() => {
     order: 3;
     flex: 1 1 100%;
   }
+}
+
+/* Hair colours of each model. */
+.era-post {
+  --era-color: #765352;
+}
+.era-pre {
+  --era-color: #a26875;
+}
+
+.era-tabs {
+  display: flex;
+  gap: 0.4rem;
+  padding: 0 0.75rem;
+}
+
+.era-tab {
+  flex: 1;
+  padding: 0.7rem 1rem 0.6rem;
+  border: none;
+  border-radius: 14px 14px 0 0;
+  background: color-mix(in srgb, var(--era-color) 14%, #fff);
+  color: var(--era-color);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.era-tab:hover {
+  background: color-mix(in srgb, var(--era-color) 24%, #fff);
+}
+
+.era-tab.active {
+  background: var(--era-color);
+  color: #fff;
+}
+
+.era-count {
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.era-list :deep(.table-wrap) {
+  border-top: 4px solid var(--era-color);
 }
 
 .status {
