@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { Clip, SortDir, SortKey } from '../lib/clips';
 import { downloadName, downloadUrl, formatDate } from '../lib/format';
 import { smoothScrollTo } from '../lib/scroll';
+import { activeMedia } from '../lib/orientation';
 import PlatformBadge from './PlatformBadge.vue';
 import SourceLinks from './SourceLinks.vue';
 import VideoPanel from './VideoPanel.vue';
@@ -165,8 +166,8 @@ watch(
             <td class="col-dl">
               <a
                 class="dl"
-                :href="downloadUrl(clip.videoUrl, clip.clipNumber, clip.description)"
-                :download="downloadName(clip.clipNumber, clip.description)"
+                :href="downloadUrl(activeMedia(clip).src, clip.clipNumber, activeMedia(clip).name)"
+                :download="downloadName(clip.clipNumber, activeMedia(clip).name)"
                 title="Download clip"
                 aria-label="Download clip"
                 @click.stop

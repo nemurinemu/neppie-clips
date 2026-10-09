@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 import type { Clip } from '../lib/clips';
 import { downloadName, downloadUrl, formatDate, formatSize } from '../lib/format';
 import { scrollToAnchor } from '../lib/scroll';
+import { activeMedia, preferVertical } from '../lib/orientation';
 import SourceLinks from './SourceLinks.vue';
 
 const props = defineProps<{ clip: Clip }>();
@@ -11,35 +12,12 @@ const emit = defineEmits<{ close: [] }>();
 const copied = ref(false);
 const player = ref<HTMLVideoElement | null>(null);
 
-const ORIENTATION_KEY = 'neppie-clips:vertical';
-const readPref = () => {
-  try {
-    return localStorage.getItem(ORIENTATION_KEY) === '1';
-  } catch {
-    return false;
-  }
-};
-const showVertical = ref(!!props.clip.verticalUrl && readPref());
-watch(showVertical, (v) => {
-  try {
-    localStorage.setItem(ORIENTATION_KEY, v ? '1' : '0');
-  } catch {
-    /* storage unavailable */
-  }
-});
-
-const vertical = computed(() => showVertical.value && !!props.clip.verticalUrl);
-const activeSrc = computed(() =>
-  vertical.value ? props.clip.verticalUrl! : props.clip.videoUrl,
-);
-const activeSize = computed(() =>
-  vertical.value ? props.clip.verticalSizeBytes : props.clip.sizeBytes,
-);
-const activeName = computed(() =>
-  vertical.value
-    ? `${props.clip.description.split('\n')[0] ?? ''} vertical`
-    : props.clip.description,
-);
+const showVertical = preferVertical;
+const media = computed(() => activeMedia(props.clip));
+const vertical = computed(() => media.value.vertical);
+const activeSrc = computed(() => media.value.src);
+const activeSize = computed(() => media.value.size);
+const activeName = computed(() => media.value.name);
 
 // Exiting native fullscreen leaves the page scrolled off the still-open panel.
 // Scroll the clip's row back under the header, matching how opening it scrolls.
