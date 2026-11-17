@@ -260,6 +260,7 @@ export const adminRouter = (): Router => {
     }
     db.transaction(() => {
       db.prepare(`UPDATE twitch_clips SET note = ?, align_status = 'dismissed', assigned_stream = NULL WHERE video_id = ?`).run(note, id);
+      db.prepare(`DELETE FROM sources WHERE video_id = ? AND url LIKE '%youtube.com/watch%'`).run(id);
       db.prepare('UPDATE videos SET description = ?, needs_review = 0, updated_at = ? WHERE id = ?').run(
         note ? `${t.title}\n${note}` : t.title,
         now(),

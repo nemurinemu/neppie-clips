@@ -53,16 +53,19 @@ const fallbackOffset = (db: Database.Database) => {
 export const youtubeUrl = (streamId: string, seconds: number) =>
   `https://www.youtube.com/watch?v=${streamId}&t=${Math.max(0, seconds)}s`;
 
-// The YouTube stream whose window contains the Twitch stream's start.
+// The YouTube stream whose window contains the Twitch stream's start. One
+// without an end only counts if it started with the VOD: a stream deleted
+// while live never gets an end and would otherwise swallow every later VOD.
 const streamForVod = (db: Database.Database, vodCreatedAt: string) => {
   const t = Date.parse(vodCreatedAt);
+  const iso = (ms: number) => new Date(ms).toISOString();
   return db
     .prepare(
       `SELECT * FROM youtube_streams
-       WHERE started_at <= ? AND (ended_at IS NULL OR ended_at >= ?)
+       WHERE started_at <= ? AND (ended_at >= ? OR (ended_at IS NULL AND started_at >= ?))
        ORDER BY started_at DESC LIMIT 1`,
     )
-    .get(new Date(t + START_TOLERANCE_MS).toISOString(), new Date(t).toISOString()) as
+    .get(iso(t + START_TOLERANCE_MS), iso(t), iso(t - START_TOLERANCE_MS)) as
     | YoutubeStream
     | undefined;
 };
